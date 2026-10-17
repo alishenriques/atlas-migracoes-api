@@ -28,7 +28,7 @@ Sem `DATABASE_URL`, a API responde em **modo demonstração**: poucos registros 
 
 ## Scripts
 
-`yarn dev` · `yarn lint` · `yarn typecheck` · `yarn test` · `yarn db:generate` · `yarn db:migrate` · `yarn import:xlsx`
+`yarn dev` · `yarn lint` · `yarn typecheck` · `yarn test` · `yarn db:generate` · `yarn db:migrate` · `yarn import:xlsx` · `yarn geocode`
 
 ## Variáveis de ambiente
 
@@ -61,6 +61,22 @@ Regras de leitura, para que nada seja inventado:
 | Textos | Células com várias linhas viram uma linha, separadas por ` · `. |
 
 Resultado com as planilhas de 16/07/2026: 31 artistas, 417 obras, 299 exposições, 108 publicações, 73 lugares; 11 exposições e 1 publicação citadas pelas obras não constam das planilhas.
+
+## Geocodificando os lugares
+
+As coordenadas são buscadas uma única vez no [Nominatim](https://nominatim.org/) (OpenStreetMap, gratuito), revisadas por uma pessoa e gravadas em `places`. O mapa nunca consulta o Nominatim ao vivo.
+
+```bash
+yarn geocode --dir ~/atlas/planilhas --out ~/atlas/lugares.geo.json   # busca e grava o arquivo de revisão
+# revise o arquivo: confira displayName, corrija lat/lng e marque status "reviewed"
+yarn geocode --apply ~/atlas/lugares.geo.json                          # grava no banco
+```
+
+- Respeita a política de uso do Nominatim: uma requisição por segundo e um User-Agent que identifica o projeto.
+- Reexecutar só busca os lugares que ainda não estão no arquivo, então a revisão nunca se perde e uma execução interrompida continua de onde parou.
+- `status`: `auto` (resultado do Nominatim, a conferir), `reviewed` (conferido) ou `not_found` (preencher à mão). Entradas sem coordenadas não são aplicadas e aparecem no resumo.
+- Um erro HTTP interrompe a execução em vez de registrar "não encontrado".
+- O arquivo de revisão tem nomes de lugares do acervo, por isso `*.geo.json` está no `.gitignore`.
 
 ## Consultas
 

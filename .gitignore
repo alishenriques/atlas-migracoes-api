@@ -16,3 +16,5 @@ coverage
 
 # Collection spreadsheets stay off this public repo (see README, "Importando as planilhas").
 *.xlsx
+# Geocoding review files hold collection place names (see README).
+*.geo.json
