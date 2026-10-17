@@ -18,3 +18,10 @@ coverage
 *.xlsx
 # Geocoding review files hold collection place names (see README).
 *.geo.json
+
+# Local Neon agent tooling (MCP config, skills, project link) stays on each machine.
+# Install it with `neon mcp --oauth --agent claude-code -y` and `neon skills -s neon --agent claude-code -y`.
+.mcp.json
+.claude/skills/
+skills-lock.json
+.neon
