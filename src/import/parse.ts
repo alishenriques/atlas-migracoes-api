@@ -126,7 +126,10 @@ export type ParsedPlace = {
  * "América➔Brasil➔São Paulo➔São Paulo". The continent prefix is dropped;
  * historical names are kept as written, with the present-day name aside.
  */
-export function parsePlace(value: unknown, onRepair?: (raw: string) => void): ParsedPlace | null {
+/** What `parsePlace` repaired: a street address glued onto the name, or a country glued onto its state. */
+export type PlaceRepair = "address" | "country";
+
+export function parsePlace(value: unknown, onRepair?: (raw: string, repair: PlaceRepair) => void): ParsedPlace | null {
   const text = cleanText(value);
   if (text === null) return null;
 
@@ -150,8 +153,16 @@ export function parsePlace(value: unknown, onRepair?: (raw: string) => void): Pa
     return name.replace(/\d+$/, "").trim();
   });
   if (repaired.some((segment, index) => segment !== segments[index])) {
-    onRepair?.(text);
+    onRepair?.(text, "address");
     segments.splice(0, segments.length, ...repaired.filter(Boolean));
+  }
+
+  // The export sometimes glues the state onto the country name in place of
+  // "América" ("Estados Unidos da Illinois➔Chicago"): split it back out.
+  const gluedState = segments[0].match(/^Estados Unidos da (?!América$)(.+)$/);
+  if (gluedState) {
+    onRepair?.(text, "country");
+    segments.splice(0, 1, "Estados Unidos da América", gluedState[1].trim());
   }
 
   return {

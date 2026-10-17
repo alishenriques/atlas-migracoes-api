@@ -57,8 +57,28 @@ Regras de leitura, para que nada seja inventado:
 |---|---|
 | Datas | `FuzzyDate` com o texto original (`raw`) e a precisão: `day` (22/06/1946), `month` (03/1950), `year`, `circa` (c. 1949), `range` (1940-1945, 1940-45, década de 1950) ou `unknown` (s.d., desconhecida). Notas após `;` ficam só no `raw`. |
 | Título e data | A célula `Titulo, Data` é dividida na última vírgula só se o final for uma data ou "s.d."; senão a vírgula é do título. |
-| Lugares | Hierarquia `➔` sem o prefixo de continente; nomes históricos mantidos; `[atual X]` vai para `currentName`. Endereço colado no nome (ex.: `Santa Maria3960`) é removido com aviso. |
+| Lugares | Hierarquia `➔` sem o prefixo de continente; nomes históricos mantidos; `[atual X]` vai para `currentName`. Endereço colado no nome (ex.: `Santa Maria3960`) é removido com aviso. País colado com o estado (`Estados Unidos da Illinois`) vira `Estados Unidos da América ➔ Illinois`, com aviso. |
 | Textos | Células com várias linhas viram uma linha, separadas por ` · `. |
+
+### Correções de lugares revisadas
+
+Erros das planilhas que nenhuma regra distingue de um nome verdadeiro (uma grafia trocada, um nome atual que falta) vão numa tabela revisada por uma pessoa. Ela cita lugares do acervo, então fica ao lado das planilhas, fora deste repositório:
+
+```json
+[
+  { "match": ["Áustria", "Vienna"], "path": ["Áustria", "Viena"] },
+  { "match": ["Rússia", "Sebastopol"], "currentName": "Sebastopol, Ucrânia" }
+]
+```
+
+```bash
+yarn import:xlsx --dir ~/atlas/planilhas --corrections ~/atlas/correcoes-lugares.json
+```
+
+- `match` é o caminho como o importador o lê (sem continente e depois das correções automáticas). `path` troca o caminho, e `currentName` preenche o nome atual. Cada entrada precisa de pelo menos um dos dois.
+- Cada correção aplicada aparece como aviso no relatório, e uma correção que não encontrou o lugar também.
+- Trocar o caminho muda o id do lugar. A linha antiga fica no banco, sem nenhuma referência, e a API deixa de servi-la. As coordenadas não passam para o id novo: troque o `id` no arquivo de revisão do geocode e rode `--apply` de novo.
+- O `yarn geocode --dir` aceita o mesmo `--corrections`.
 
 Resultado com as planilhas de 16/07/2026: 31 artistas, 417 obras, 299 exposições, 108 publicações, 73 lugares; 11 exposições e 1 publicação citadas pelas obras não constam das planilhas.
 

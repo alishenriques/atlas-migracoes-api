@@ -22,8 +22,18 @@ export async function loadDataset(db: Database): Promise<Dataset> {
   const exhibitionsByWork = group(exhibitionLinks, (link) => link.workId, (link) => link.exhibitionId);
   const publicationsByWork = group(publicationLinks, (link) => link.workId, (link) => link.publicationId);
 
+  // A place whose name was corrected on re-import gets a new id and leaves its
+  // old row behind with no artist or exhibition pointing at it. Rows are never
+  // deleted automatically; serving only referenced places keeps them off the map.
+  const usedPlaceIds = new Set(
+    [
+      ...artistRows.flatMap((artist) => [artist.birthPlaceId, artist.deathPlaceId]),
+      ...exhibitionRows.map((exhibition) => exhibition.placeId),
+    ].filter((id): id is string => id !== null),
+  );
+
   return {
-    places: placeRows,
+    places: placeRows.filter((place) => usedPlaceIds.has(place.id)),
     artists: artistRows,
     works: workRows.map((work) => ({
       ...work,

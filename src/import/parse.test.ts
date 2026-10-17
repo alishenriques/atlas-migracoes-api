@@ -94,6 +94,23 @@ describe("parsePlace", () => {
     expect(repairs).toEqual([input]);
   });
 
+  it("splits a state glued onto the country name", () => {
+    const repairs: string[] = [];
+    const place = parsePlace("América➔Estados Unidos da Illinois➔Chicago", (_raw, repair) => repairs.push(repair));
+    expect(place).toMatchObject({
+      id: "estados-unidos-da-america-illinois-chicago",
+      path: ["Estados Unidos da América", "Illinois", "Chicago"],
+      country: "Estados Unidos da América",
+    });
+    expect(repairs).toEqual(["country"]);
+    expect(parsePlace("Estados Unidos da América➔Nova York➔Nova York", () => repairs.push("again"))?.path).toEqual([
+      "Estados Unidos da América",
+      "Nova York",
+      "Nova York",
+    ]);
+    expect(repairs).toEqual(["country"]);
+  });
+
   it("returns null for empty cells", () => {
     expect(parsePlace(null)).toBeNull();
   });

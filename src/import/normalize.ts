@@ -1,4 +1,5 @@
 import type { Artist, Dataset, Exhibition, Place, Publication, Work } from "../schemas/domain.js";
+import { createPlaceCorrector, type PlaceCorrection } from "./corrections.js";
 import { cleanText, parseFuzzyDate, parsePlace, slugify, splitIds, splitTitleAndDate } from "./parse.js";
 import type { Sheet } from "./workbook.js";
 
@@ -15,19 +16,33 @@ export type NormalizeResult = {
  * and references that point at records not in the exports are reported
  * rather than dropped silently.
  */
-export function normalizeSheets(sheets: Sheet[]): NormalizeResult {
+export function normalizeSheets(
+  sheets: Sheet[],
+  { placeCorrections = [] }: { placeCorrections?: PlaceCorrection[] } = {},
+): NormalizeResult {
   const places = new Map<string, Place>();
   const artists = new Map<string, Artist>();
   const works = new Map<string, Work>();
   const exhibitions = new Map<string, Exhibition>();
   const publications = new Map<string, Publication>();
   const warnings: string[] = [];
+  const corrector = createPlaceCorrector(placeCorrections);
+  const corrected = new Set<string>();
 
   function placeId(value: unknown): string | null {
-    const parsed = parsePlace(value, (raw) =>
-      warnings.push(`Lugar com endereço colado no nome, corrigido: "${raw}".`),
+    const raw = parsePlace(value, (text, repair) =>
+      warnings.push(
+        repair === "address"
+          ? `Lugar com endereço colado no nome, corrigido: "${text}".`
+          : `País colado com o estado, corrigido para "Estados Unidos da América": "${text}".`,
+      ),
     );
-    if (!parsed) return null;
+    if (!raw) return null;
+    const parsed = corrector.apply(raw);
+    if (parsed !== raw && !corrected.has(raw.id)) {
+      corrected.add(raw.id);
+      warnings.push(`Lugar corrigido pela tabela de revisão: "${raw.path.join(" ➔ ")}" → "${parsed.path.join(" ➔ ")}".`);
+    }
     if (!places.has(parsed.id)) places.set(parsed.id, { ...parsed, lat: null, lng: null });
     return parsed.id;
   }
@@ -128,6 +143,10 @@ export function normalizeSheets(sheets: Sheet[]): NormalizeResult {
         }),
       });
     });
+  }
+
+  for (const entry of corrector.unused()) {
+    warnings.push(`Correção de lugar sem correspondência nas planilhas: "${entry.match.join(" ➔ ")}".`);
   }
 
   return {
