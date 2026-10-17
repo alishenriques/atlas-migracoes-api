@@ -13,3 +13,6 @@ coverage
 .env.local
 .vercel
 .env*
+
+# Collection spreadsheets stay off this public repo (see README, "Importando as planilhas").
+*.xlsx
