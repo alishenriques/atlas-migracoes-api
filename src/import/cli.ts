@@ -4,18 +4,23 @@ import { basename, join } from "node:path";
 import { parseArgs } from "node:util";
 import { createDatabase } from "../db/client.js";
 import { loadEnv } from "../schemas/domain.js";
+import { readPlaceCorrections } from "./corrections.js";
 import { normalizeSheets } from "./normalize.js";
 import { buildReport, persistImport } from "./persist.js";
 import { readWorkbook, type Sheet } from "./workbook.js";
 
-// Usage: yarn import:xlsx --dir <folder with the .xlsx exports> [--dry-run]
+// Usage: yarn import:xlsx --dir <folder with the .xlsx exports> [--corrections <file.json>] [--dry-run]
 // The spreadsheets stay on the machine running the import; they are never committed.
 const { values } = parseArgs({
-  options: { dir: { type: "string" }, "dry-run": { type: "boolean", default: false } },
+  options: {
+    dir: { type: "string" },
+    corrections: { type: "string" },
+    "dry-run": { type: "boolean", default: false },
+  },
 });
 
 if (!values.dir) {
-  console.error("Informe a pasta das planilhas: yarn import:xlsx --dir <pasta> [--dry-run]");
+  console.error("Informe a pasta das planilhas: yarn import:xlsx --dir <pasta> [--corrections <arquivo.json>] [--dry-run]");
   process.exit(1);
 }
 
@@ -27,7 +32,8 @@ for (const file of files) {
   sheets.push(...found);
 }
 
-const result = normalizeSheets(sheets);
+const placeCorrections = values.corrections ? await readPlaceCorrections(values.corrections) : [];
+const result = normalizeSheets(sheets, { placeCorrections });
 const env = loadEnv();
 const db = values["dry-run"] ? null : createDatabase(env);
 if (!values["dry-run"] && !db) {

@@ -1,5 +1,6 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { createTestApp, createTestDatabase, buildFixtureWorkbook } from "../test/helpers.js";
+import { placeCorrectionsSchema, type PlaceCorrection } from "./corrections.js";
 import { normalizeSheets } from "./normalize.js";
 import { persistImport } from "./persist.js";
 import { readWorkbook, type Sheet } from "./workbook.js";
@@ -46,6 +47,50 @@ describe("normalizeSheets", () => {
     expect(result.unresolvedExhibitionRefs).toEqual([{ workId: "T.1", exhibitionId: "EX.404" }]);
     expect(result.unresolvedPublicationRefs).toEqual([{ workId: "T.3", publicationId: "PB.999" }]);
     expect(result.dataset.works.find((work) => work.id === "T.1")?.exhibitionIds).toEqual(["EX.1"]);
+  });
+});
+
+describe("place corrections", () => {
+  const corrections: PlaceCorrection[] = [
+    { match: ["Rússia", "Sebastopol"], path: ["Império Russo", "Sebastopol"] },
+    { match: ["Áustria", "Viena"], currentName: "Viena, Áustria" },
+    { match: ["Lugar", "Inexistente"], currentName: "Nada" },
+  ];
+
+  it("applies reviewed fixes and reports each one", () => {
+    const { dataset, warnings } = normalizeSheets(sheets, { placeCorrections: corrections });
+    expect(dataset.places.map((place) => place.id).sort()).toEqual([
+      "austria-viena",
+      "brasil-sao-paulo-sao-paulo",
+      "imperio-russo-sebastopol",
+    ]);
+    const sebastopol = dataset.places.find((place) => place.id === "imperio-russo-sebastopol");
+    expect(sebastopol).toMatchObject({ country: "Império Russo", currentName: "Sebastopol, Ucrânia" });
+    expect(dataset.places.find((place) => place.id === "austria-viena")?.currentName).toBe("Viena, Áustria");
+    expect(dataset.artists.find((artist) => artist.slug === "ana-teste")?.birthPlaceId).toBe("imperio-russo-sebastopol");
+    expect(warnings.filter((w) => w.startsWith("Lugar corrigido"))).toHaveLength(2);
+    expect(warnings).toContain('Correção de lugar sem correspondência nas planilhas: "Lugar ➔ Inexistente".');
+  });
+
+  it("rejects an entry that changes nothing", () => {
+    expect(placeCorrectionsSchema.safeParse([{ match: ["Áustria", "Viena"] }]).success).toBe(false);
+  });
+
+  it("keeps a renamed place's old row off the API", async () => {
+    const db = await createTestDatabase();
+    await persistImport(db, normalizeSheets(sheets), ["fixture.xlsx"]);
+    await persistImport(db, normalizeSheets(sheets, { placeCorrections: corrections }), ["fixture.xlsx"]);
+
+    const { gql } = createTestApp(db);
+    const response = await gql<{ places: { id: string }[]; stats: { places: number } }>(
+      "{ places { id } stats { places } }",
+    );
+    expect(response.data?.places.map((place) => place.id).sort()).toEqual([
+      "austria-viena",
+      "brasil-sao-paulo-sao-paulo",
+      "imperio-russo-sebastopol",
+    ]);
+    expect(response.data?.stats.places).toBe(3);
   });
 });
 
