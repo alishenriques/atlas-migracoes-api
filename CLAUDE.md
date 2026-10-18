@@ -2,7 +2,7 @@
 
 Before changing anything, read the ecosystem docs in the main repo: `../atlas-migracoes/docs/ai/README.md` (architecture, conventions, non-negotiables).
 
-Quick rules: zero cost, everything typed and Zod-validated, tests required, throw `GraphQLError` (not `Error`) for client-visible errors, keep `.js` extensions in imports. Verify with `yarn lint && yarn typecheck && yarn test`.
+Quick rules: zero cost, everything typed and Zod-validated, tests required, throw `GraphQLError` (not `Error`) for client-visible errors, keep `.js` extensions in imports. Test coverage is an architecture premise: CI runs `yarn test:coverage` and fails below the floors in `vitest.config.ts` (95% lines, statements and functions, 90% branches); never lower them, and keep `cli.ts` entry points thin, since they are not measured. Verify with `yarn lint && yarn typecheck && yarn test:coverage`.
 
 ## Data rules
 
