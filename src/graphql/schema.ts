@@ -124,6 +124,95 @@ export const typeDefs = /* GraphQL */ `
     search: String
   }
 
+  "Where an open-source finding was read."
+  enum ResearchSource {
+    wikidata
+    wikipedia
+  }
+
+  enum ResearchStatus {
+    ok
+    "The source has nothing that is certainly this artist."
+    no_match
+    error
+  }
+
+  "Referenced Wikidata statements are documented; unreferenced statements and encyclopedia text are undetermined."
+  enum FindingReliability {
+    documented
+    undetermined
+  }
+
+  enum FindingReview {
+    "Wikidata names places and states as they are today, not as they were in the period."
+    present_day_name
+    "The date disagrees with the MAC USP record."
+    conflicts_with_collection
+  }
+
+  enum FindingProperty {
+    birthDate
+    birthPlace
+    deathDate
+    deathPlace
+    citizenship
+    occupation
+    movement
+    educatedAt
+    memberOf
+    notableWork
+    summary
+  }
+
+  enum MatchBasis {
+    "The only person found born in the collection's birth year."
+    birth_year
+    "The only person with exactly this name (the collection has no birth year)."
+    name
+  }
+
+  type ResearchMatch {
+    "Wikidata item id, e.g. Q1340566."
+    id: ID!
+    label: String!
+    description: String
+    url: String!
+    basis: MatchBasis!
+  }
+
+  type Finding {
+    source: ResearchSource!
+    "The page the finding was read from."
+    sourceUrl: String!
+    sourceTitle: String!
+    property: FindingProperty!
+    "Wikidata property id (P569…); null for a Wikipedia summary."
+    propertyId: String
+    "As the source gives it: a label, a text, or a date as precise as the source (YYYY, YYYY-MM or YYYY-MM-DD)."
+    value: String!
+    "References Wikidata attaches to the statement."
+    references: Int!
+    reliability: FindingReliability!
+    reviews: [FindingReview!]!
+  }
+
+  type SourceStatus {
+    source: ResearchSource!
+    status: ResearchStatus!
+    detail: String
+  }
+
+  "Open-source research on an artist. Findings are never written to the collection."
+  type Research {
+    artist: Artist!
+    "Null when no Wikidata person is certainly this artist; then there are no findings."
+    match: ResearchMatch
+    findings: [Finding!]!
+    sources: [SourceStatus!]!
+    "ISO time the sources were read (answers are cached for a day)."
+    retrievedAt: String!
+  }
+
   type Query {
     health: String!
     meta: Meta!
@@ -135,6 +224,8 @@ export const typeDefs = /* GraphQL */ `
     "Oldest first."
     exhibitions(placeId: ID): [Exhibition!]!
     work(id: ID!): Work
+    "Looks the artist up in open sources (Wikidata, Wikipedia). Null for an unknown slug."
+    research(slug: String!): Research
   }
 `;
 
@@ -208,6 +299,11 @@ export const resolvers = {
     },
     work: async (_: unknown, args: { id: string }, context: AppContext) =>
       (await context.data()).work.get(args.id) ?? null,
+    research: async (_: unknown, args: { slug: string }, context: AppContext) => {
+      const artist = (await context.data()).artistBySlug.get(args.slug);
+      if (!artist) return null;
+      return { artist, ...(await context.research(artist)) };
+    },
   },
   Artist: {
     birthPlace: withData((artist: Artist, data) => placeOf(artist.birthPlaceId, data)),
