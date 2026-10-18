@@ -44,6 +44,14 @@ describe("GraphQL app (demo mode, no database)", () => {
     );
     expect(result.data?.exhibitions[0]?.works.map((work) => work.id)).toEqual(["DEMO.1", "DEMO.2"]);
   });
+
+  it("resolves a work with its artist, exhibitions and publications", async () => {
+    const result = await gql(`{ work(id: "DEMO.1") { artist { slug } exhibitions { id } publications { id } } }`);
+    expect(result.data).toEqual({
+      work: { artist: { slug: "artista-demo-a" }, exhibitions: [{ id: "DEMO.EX.1" }], publications: [{ id: "DEMO.PB.1" }] },
+    });
+    expect((await gql(`{ work(id: "nada") { id } }`)).data).toEqual({ work: null });
+  });
 });
 
 describe("CORS", () => {
