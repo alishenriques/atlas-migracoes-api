@@ -111,6 +111,7 @@ Tudo é leitura no MVP; a edição por pesquisadores vem numa etapa seguinte do 
 | `places` | Lugares com `lat`/`lng` (nulos até a geocodificação) |
 | `exhibitions(placeId)` | Exposições, das mais antigas para as mais recentes |
 | `work(id)` | Uma obra pelo tombo |
+| `research(slug)` | Pesquisa do artista em fontes abertas (Wikidata e Wikipedia): o item do Wikidata que é certamente o artista, os achados com a página de origem, confiabilidade e alertas de revisão, e o estado de cada fonte |
 
 ```graphql
 {
@@ -119,6 +120,20 @@ Tudo é leitura no MVP; a edição por pesquisadores vem numa etapa seguinte do 
     birthPlace { label currentName lat lng }
     birthDate { raw year precision }
     exhibitions { title startDate { raw } place { label } }
+  }
+}
+```
+
+### Pesquisa em fontes abertas (IA Relacional)
+
+`research(slug)` procura o artista no Wikidata e só aceita um item quando ele é certamente o artista: a única pessoa nascida no ano do acervo (com "c." vale dois anos para cada lado) ou, sem ano no acervo, a única pessoa com exatamente o mesmo nome. Sem certeza, não há achados (`match: null`, fonte `no_match`). Cada achado guarda a página de onde veio; afirmações do Wikidata com referência são `documented`, sem referência e texto da Wikipedia são `undetermined`. Lugares e países vêm com o nome de hoje e levam o alerta `present_day_name`; datas que discordam do acervo levam `conflicts_with_collection`. Nada disso é gravado na base. As respostas ficam em cache por um dia em cada instância.
+
+```graphql
+{
+  research(slug: "lasar-segall") {
+    match { id label url basis }
+    findings { property value sourceUrl reliability reviews }
+    sources { source status detail }
   }
 }
 ```
