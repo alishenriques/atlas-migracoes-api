@@ -2,10 +2,14 @@ import { createYoga } from "graphql-yoga";
 import { createContext } from "./context.js";
 import { createDatabase, type Database } from "./db/client.js";
 import { schema } from "./graphql/schema.js";
+import { createResearchCache } from "./research/research.js";
+import type { Fetcher } from "./research/wikimedia.js";
 import { loadEnv, type Env } from "./schemas/domain.js";
 
 export type AppDependencies = {
   db?: Database | null;
+  /** How the open sources are reached; tests pass a fake. */
+  fetcher?: Fetcher;
 };
 
 export function createApp(env: Env = loadEnv(), deps: AppDependencies = {}) {
@@ -19,6 +23,6 @@ export function createApp(env: Env = loadEnv(), deps: AppDependencies = {}) {
       credentials: false,
       allowedHeaders: ["Content-Type"],
     },
-    context: createContext(env, db),
+    context: createContext(env, db, createResearchCache(deps.fetcher ?? fetch)),
   });
 }
