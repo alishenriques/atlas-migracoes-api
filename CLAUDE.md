@@ -14,3 +14,4 @@ Quick rules: zero cost, everything typed and Zod-validated, tests required, thro
 
 - This API serves the Atlas app only (`atlas-migracoes`), read-only in the MVP. Researcher editing and auth come later in the roadmap.
 - Big changes: new branch, then a detailed PR (what changed, what problem it solves, new or changed GraphQL types/operations and how to call them, migrations, architecture decisions, how it was verified). **Never merge without Alisson's explicit approval on the PR**; he reviews by commenting, so reply and fix on the same branch.
+- Every PR is linked to GitHub Project 4 (https://github.com/users/alishenriques/projects/4) and labelled by kind, module and stage. See "Labels and project board" in `../atlas-migracoes/docs/ai/architecture.md`.
