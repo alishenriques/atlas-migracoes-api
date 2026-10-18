@@ -28,7 +28,7 @@ Sem `DATABASE_URL`, a API responde em **modo demonstração**: poucos registros 
 
 ## Scripts
 
-`yarn dev` · `yarn lint` · `yarn typecheck` · `yarn test` · `yarn db:generate` · `yarn db:migrate` · `yarn import:xlsx` · `yarn geocode`
+`yarn dev` · `yarn lint` · `yarn typecheck` · `yarn test` · `yarn test:coverage` · `yarn db:generate` · `yarn db:migrate` · `yarn import:xlsx` · `yarn geocode`
 
 ## Variáveis de ambiente
 
