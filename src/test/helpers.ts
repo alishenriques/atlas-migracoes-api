@@ -7,6 +7,7 @@ import { createApp } from "../app.js";
 import type { Database } from "../db/client.js";
 import * as schema from "../db/schema.js";
 import { loadEnv } from "../schemas/domain.js";
+import type { Fetcher } from "../research/wikimedia.js";
 
 export const testEnv = loadEnv({ NODE_ENV: "test" });
 
@@ -27,8 +28,13 @@ export async function createTestDatabase(): Promise<Database> {
   return db;
 }
 
-export function createTestApp(db: Database | null) {
-  const app = createApp(testEnv, { db });
+/** Stands in for the network: tests never reach the open sources. */
+const offline: Fetcher = async (url) => {
+  throw new Error(`offline in tests: ${url}`);
+};
+
+export function createTestApp(db: Database | null, fetcher: Fetcher = offline) {
+  const app = createApp(testEnv, { db, fetcher });
 
   async function gql<T = Record<string, unknown>>(query: string, variables?: Record<string, unknown>) {
     const response = await app.fetch("http://localhost/graphql", {
