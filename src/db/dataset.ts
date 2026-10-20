@@ -3,8 +3,8 @@ import type { Database } from "./client.js";
 import { artists, exhibitions, places, publications, workExhibitions, workPublications, works } from "./schema.js";
 
 /**
- * The whole collection is small (hundreds of rows), so each request loads it
- * once and resolves from memory. That keeps resolvers simple and avoids N+1
+ * The whole collection is small (hundreds of rows), so it is loaded whole
+ * (once every few minutes per instance, see context.ts) and resolved from memory. That keeps resolvers simple and avoids N+1
  * queries; revisit if the base grows past a few thousand records.
  */
 export async function loadDataset(db: Database): Promise<Dataset> {
