@@ -127,6 +127,10 @@ Tudo é leitura no MVP; a edição por pesquisadores vem numa etapa seguinte do 
 }
 ```
 
+### Limites por requisição
+
+A API é pública, então cada requisição tem limites (`src/graphql/limits.ts`, com graphql-armor): profundidade 8, até 10 aliases, 2000 tokens e custo 5000, e **uma só pesquisa (`research`) por requisição**, para que aliases ou fragments não disparem a pesquisa de todos os artistas de uma vez e esgotem a cota grátis do Gemini. As operações do app (`src/test/appOperations.ts`, cópia de `atlas-migracoes/src/lib/atlas.ts`) ficam bem abaixo disso, e um teste garante que continuem aceitas. Em produção a página do GraphiQL fica desligada. Cada instância guarda a base carregada por 5 minutos, em vez de ler as sete tabelas a cada requisição.
+
 ### Pesquisa em fontes abertas (IA Relacional)
 
 `research(slug)` procura o artista no Wikidata e só aceita um item quando ele é certamente o artista: a única pessoa nascida no ano do acervo (com "c." vale dois anos para cada lado) ou, sem ano no acervo, a única pessoa com exatamente o mesmo nome. Sem certeza, não há achados (`match: null`, fonte `no_match`). Cada achado guarda a página de onde veio; afirmações do Wikidata com referência são `documented`, sem referência e texto da Wikipedia são `undetermined`. Lugares e países vêm com o nome de hoje e levam o alerta `present_day_name`; datas que discordam do acervo levam `conflicts_with_collection`. Nada disso é gravado na base. As respostas ficam em cache por um dia em cada instância.
@@ -143,4 +147,4 @@ Tudo é leitura no MVP; a edição por pesquisadores vem numa etapa seguinte do 
 }
 ```
 
-**Resumo com IA (Gemini).** Com uma pessoa encontrada e achados, a API monta o prompt: as instruções (resumir só com os achados, citar cada afirmação como `[n]`, raciocinar só com a geopolítica do período, tratar o texto dos achados como dado), o registro do acervo, o mapa da Europa em 1º de julho do ano de nascimento (o Estado que continha o local de nascimento e a lista de Estados daquele dia, lidos do mesmo arquivo CShapes 2.0 da Camada Histórica) e os achados numerados. O prompt inteiro volta em `summary.prompt`. O texto só é mostrado (`ok`) quando cita pelo menos um achado e todas as citações existem; senão fica `rejected`. Sem chave, `not_configured` (o prompt aparece mesmo assim). Uma falha do Gemini (`error`) não entra no cache, para a próxima visita tentar de novo.
+**Resumo com IA (Gemini).** Com uma pessoa encontrada e achados, a API monta o prompt: as instruções (resumir só com os achados, citar cada afirmação como `[n]`, raciocinar só com a geopolítica do período, tratar o texto dos achados como dado), o registro do acervo, o mapa da Europa em 1º de julho do ano de nascimento (o Estado que continha o local de nascimento e a lista de Estados daquele dia, lidos do mesmo arquivo CShapes 2.0 da Camada Histórica) e os achados numerados. O prompt inteiro volta em `summary.prompt`. O texto só é mostrado (`ok`) quando cita pelo menos um achado e todas as citações existem; senão fica `rejected`. Sem chave, `not_configured` (o prompt aparece mesmo assim). Uma falha (de uma fonte ou do Gemini, `error`) fica em cache só por 5 minutos: a próxima visita depois disso tenta de novo, sem que cada visualização peça outra vez enquanto o Gemini responde 429.
