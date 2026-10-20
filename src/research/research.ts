@@ -258,21 +258,29 @@ export async function researchArtist(
 /**
  * Keeps each artist's research for `ttlMs` (a day by default) in the running
  * instance, so the open sources and the model are asked once per artist and
- * not on every view. A failed lookup or summary is not kept, so the next view
- * tries again.
+ * not on every view. A failed lookup or summary is kept only for `retryMs`
+ * (five minutes by default): long enough that a burst of views, or someone
+ * hammering the API after Gemini answered 429, does not ask again on every
+ * request, short enough that the next visitor gets a fresh try.
  */
-export function createResearchCache(deps: ResearchDeps, ttlMs = 24 * 60 * 60 * 1000, clock = () => new Date()) {
-  const entries = new Map<string, { at: number; research: Promise<Research> }>();
+export function createResearchCache(
+  deps: ResearchDeps,
+  ttlMs = 24 * 60 * 60 * 1000,
+  clock = () => new Date(),
+  retryMs = 5 * 60 * 1000,
+) {
+  const entries = new Map<string, { at: number; ttl: number; research: Promise<Research> }>();
   return (artist: Artist, places: ArtistPlaces): Promise<Research> => {
     const now = clock();
     const cached = entries.get(artist.id);
-    if (cached && now.getTime() - cached.at < ttlMs) return cached.research;
-    const research = researchArtist(artist, places, deps, now).then((result) => {
+    if (cached && now.getTime() - cached.at < cached.ttl) return cached.research;
+    const entry = { at: now.getTime(), ttl: ttlMs, research: researchArtist(artist, places, deps, now) };
+    entry.research = entry.research.then((result) => {
       const failed = result.sources.some((source) => source.status === "error") || result.summary.status === "error";
-      if (failed) entries.delete(artist.id);
+      if (failed) entry.ttl = Math.min(ttlMs, retryMs);
       return result;
     });
-    entries.set(artist.id, { at: now.getTime(), research });
-    return research;
+    entries.set(artist.id, entry);
+    return entry.research;
   };
 }
