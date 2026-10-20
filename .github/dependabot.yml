@@ -1,0 +1,15 @@
+# Weekly update PRs for dependencies and for the actions the workflows use.
+# Each one goes through CI and Alisson's review like any other PR.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
