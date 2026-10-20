@@ -295,7 +295,7 @@ describe("researchArtist with the period's map and the model", () => {
 });
 
 describe("createResearchCache", () => {
-  it("asks the sources once per artist a day, and again after a failure", async () => {
+  it("asks the sources once per artist a day, and a failure again only after a short wait", async () => {
     let clock = new Date("2026-10-18T06:00:00Z");
     const fetcher = fakeFetcher(found);
     const research = createResearchCache(deps(fetcher), 60_000, () => clock);
@@ -310,18 +310,21 @@ describe("createResearchCache", () => {
     expect(fetcher.mock.calls.length).toBe(calls * 2);
 
     const failing = fakeFetcher({ fail: /./ });
-    const flaky = createResearchCache(deps(failing), 60_000, () => clock);
+    const flaky = createResearchCache(deps(failing), 60_000, () => clock, 10_000);
     await flaky(artist(), noPlaces);
     await flaky(artist(), noPlaces);
-    expect(failing).toHaveBeenCalledTimes(2);
+    const failedCalls = failing.mock.calls.length;
+    clock = new Date("2026-10-18T06:02:11Z");
+    await flaky(artist(), noPlaces);
+    expect(failing.mock.calls.length).toBe(failedCalls * 2);
   });
 
-  it("asks again when the summary failed", async () => {
+  it("keeps a failed summary for a short while instead of asking on every view", async () => {
     const fetcher = fakeFetcher({ ...found, fail: /generativelanguage/ });
     const research = createResearchCache(deps(fetcher, { gemini: { apiKey: "k", model: "m" } }));
     expect((await research(artist(), noPlaces)).summary.status).toBe("error");
     await research(artist(), noPlaces);
-    expect(fetcher.mock.calls.filter(([url]) => url.includes("generativelanguage"))).toHaveLength(2);
+    expect(fetcher.mock.calls.filter(([url]) => url.includes("generativelanguage"))).toHaveLength(1);
   });
 
   it("uses the real clock and a day's lifetime by default", async () => {
