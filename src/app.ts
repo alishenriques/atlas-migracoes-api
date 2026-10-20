@@ -4,6 +4,7 @@ import { createDatabase, type Database } from "./db/client.js";
 import { queryLimits } from "./graphql/limits.js";
 import { schema } from "./graphql/schema.js";
 import { createResearchCache } from "./research/research.js";
+import { storedResearch } from "./research/stored.js";
 import { createStatesLoader } from "./research/territories.js";
 import type { Fetcher } from "./research/wikimedia.js";
 import { loadEnv, type Env } from "./schemas/domain.js";
@@ -21,6 +22,7 @@ export function createApp(env: Env = loadEnv(), deps: AppDependencies = {}) {
     fetcher,
     gemini: env.GEMINI_API_KEY ? { apiKey: env.GEMINI_API_KEY, model: env.GEMINI_MODEL } : null,
     states: createStatesLoader(fetcher, env.CARTOGRAPHY_URL),
+    stored: db ? storedResearch(db) : undefined,
   });
 
   return createYoga({
