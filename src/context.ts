@@ -8,7 +8,7 @@ export type AppContext = {
   env: Env;
   db: Database | null;
   source: DataSource;
-  /** The collection, loaded at most once per request. */
+  /** The collection, loaded at most once every `datasetTtlMs` per running instance. */
   data: () => Promise<DatasetIndex>;
   /** Open-source research on an artist, cached per artist (see research/research.ts). */
   research: (artist: Artist, places: ArtistPlaces) => Promise<Research>;
@@ -16,19 +16,34 @@ export type AppContext = {
 
 const demoIndex = indexDataset(demoDataset);
 
-export function createContext(env: Env, db: Database | null, research: AppContext["research"]) {
+/**
+ * The base only changes when the spreadsheets are re-imported, so each running
+ * instance keeps the loaded collection for a few minutes instead of reading
+ * all seven tables on every request. A burst of traffic then costs one read
+ * per instance, not one per request, which keeps the Neon free compute in
+ * reserve. A failed load is not kept.
+ */
+export function createContext(
+  env: Env,
+  db: Database | null,
+  research: AppContext["research"],
+  datasetTtlMs = 5 * 60 * 1000,
+  clock = () => Date.now(),
+) {
+  let cached: { at: number; index: Promise<DatasetIndex> } | undefined;
+  const data = (): Promise<DatasetIndex> => {
+    if (!db) return Promise.resolve(demoIndex);
+    const now = clock();
+    if (cached && now - cached.at < datasetTtlMs) return cached.index;
+    const entry = { at: now, index: loadDataset(db).then(indexDataset) };
+    entry.index.catch(() => {
+      if (cached === entry) cached = undefined;
+    });
+    cached = entry;
+    return entry.index;
+  };
+
   return function context(): AppContext {
-    let pending: Promise<DatasetIndex> | undefined;
-    return {
-      env,
-      db,
-      source: db ? "database" : "demo",
-      research,
-      data: () => {
-        if (!db) return Promise.resolve(demoIndex);
-        pending ??= loadDataset(db).then(indexDataset);
-        return pending;
-      },
-    };
+    return { env, db, source: db ? "database" : "demo", research, data };
   };
 }
