@@ -28,7 +28,7 @@ Sem `DATABASE_URL`, a API responde em **modo demonstração**: poucos registros 
 
 ## Scripts
 
-`yarn dev` · `yarn lint` · `yarn typecheck` · `yarn test` · `yarn test:coverage` · `yarn db:generate` · `yarn db:migrate` · `yarn import:xlsx` · `yarn geocode`
+`yarn dev` · `yarn lint` · `yarn typecheck` · `yarn test` · `yarn test:coverage` · `yarn db:generate` · `yarn db:migrate` · `yarn import:xlsx` · `yarn geocode` · `yarn research:generate`
 
 ## Variáveis de ambiente
 
@@ -126,6 +126,18 @@ Tudo é leitura no MVP; a edição por pesquisadores vem numa etapa seguinte do 
   }
 }
 ```
+
+### Pesquisas geradas antes (para o evento)
+
+Para o público não depender da cota grátis do Gemini, a pesquisa de cada artista é gerada antes e gravada na tabela `research_results`. A API lê dali primeiro e só pesquisa ao vivo os artistas que ainda não têm resultado. Na sua máquina, com a `DATABASE_URL` do usuário dono do banco e a `GEMINI_API_KEY` no `.env`:
+
+```bash
+yarn db:migrate                          # cria a tabela research_results (uma vez)
+yarn research:generate                   # pesquisa os artistas que ainda não têm resultado
+yarn research:generate --slug lasar-segall --force   # refaz um artista
+```
+
+Cada linha da saída diz `stored`, `kept` (já estava gravado) ou `failed` (uma fonte ou o Gemini falhou; nada é gravado, e é só rodar de novo). Há uma pausa de 6 s entre artistas (`--delay <ms>`) para ficar dentro do limite por minuto do plano gratuito. A data mostrada na tela (`retrievedAt`) é a da geração. Se a API usar um usuário só de leitura, ele precisa de `SELECT` nessa tabela também (`GRANT SELECT ON research_results TO <usuário>`).
 
 ### Limites por requisição
 
