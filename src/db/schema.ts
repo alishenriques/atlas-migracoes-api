@@ -1,4 +1,5 @@
 import { doublePrecision, jsonb, pgTable, primaryKey, serial, text, timestamp } from "drizzle-orm/pg-core";
+import type { Research } from "../research/research.js";
 import type { FuzzyDate } from "../schemas/domain.js";
 
 // Dates from the collection are fuzzy ("c. 1949", "1940-45", "s.d."), so they
@@ -107,3 +108,16 @@ export type ImportReport = {
   unresolvedPublicationRefs: { workId: string; publicationId: string }[];
   warnings: string[];
 };
+
+/**
+ * Open-source research generated ahead of time (`yarn research:generate`), so
+ * public traffic reads it here instead of calling Wikimedia and Gemini live.
+ * Only complete results are stored; the API asks live for artists without one.
+ */
+export const researchResults = pgTable("research_results", {
+  artistId: text("artist_id")
+    .primaryKey()
+    .references(() => artists.id, { onDelete: "cascade" }),
+  research: jsonb("research").$type<Research>().notNull(),
+  generatedAt: timestamp("generated_at", { withTimezone: true }).notNull(),
+});
