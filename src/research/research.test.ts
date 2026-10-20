@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Artist, FuzzyDate } from "../schemas/domain.js";
-import { createTestApp } from "../test/helpers.js";
-import { createResearchCache, pickMatch, researchArtist } from "./research.js";
+import { createApp } from "../app.js";
+import { loadEnv } from "../schemas/domain.js";
+import { createTestApp, testEnv } from "../test/helpers.js";
+import { createResearchCache, pickMatch, researchArtist, type ResearchDeps } from "./research.js";
+import type { States } from "./territories.js";
 import { claimsOf, getEntities, readValue, USER_AGENT, type Entity, type Fetcher } from "./wikimedia.js";
 
 const date = (year: number | null, precision: FuzzyDate["precision"] = "year"): FuzzyDate => ({
@@ -61,11 +64,21 @@ const labels = {
   Q42: { id: "Q42", labels: {} },
 };
 
-type Routes = { search?: unknown; entities?: Record<string, unknown>; summary?: unknown; fail?: RegExp };
+type Routes = {
+  search?: unknown;
+  entities?: Record<string, unknown>;
+  summary?: unknown;
+  /** The borders file and Gemini's answer. */
+  states?: unknown;
+  gemini?: unknown;
+  fail?: RegExp;
+};
 
 function fakeFetcher(routes: Routes) {
   return vi.fn<Fetcher>(async (url) => {
     if (routes.fail?.test(url)) return { ok: false, status: 503, json: async () => ({}) };
+    if (url.includes("cartography")) return { ok: true, status: 200, json: async () => routes.states };
+    if (url.includes("generativelanguage")) return { ok: true, status: 200, json: async () => routes.gemini };
     const parsed = new URL(url);
     const action = parsed.searchParams.get("action");
     if (action === "wbsearchentities") return { ok: true, status: 200, json: async () => routes.search };
@@ -89,6 +102,15 @@ const found = {
 };
 
 const now = new Date("2026-10-18T06:00:00Z");
+
+const noPlaces = { birth: null, death: null };
+/** No Gemini key and no borders file, unless a test gives them. */
+const deps = (fetcher: Fetcher, extra: Partial<ResearchDeps> = {}): ResearchDeps => ({
+  fetcher,
+  gemini: null,
+  states: async () => null,
+  ...extra,
+});
 
 describe("readValue", () => {
   it("keeps a date as precise as Wikidata gives it", () => {
@@ -158,7 +180,7 @@ describe("pickMatch", () => {
 
 describe("researchArtist", () => {
   it("traces every finding to its source page and flags what needs review", async () => {
-    const research = await researchArtist(artist(), fakeFetcher(found), now);
+    const research = await researchArtist(artist(), noPlaces, deps(fakeFetcher(found)), now);
 
     expect(research.match).toEqual({
       id: "Q1340566",
@@ -202,41 +224,73 @@ describe("researchArtist", () => {
   it("reads the English article when there is no Portuguese one, and says when there is none", async () => {
     const english = { ...segall, sitelinks: { enwiki: { title: "Lasar Segall" } } };
     const fetcher = fakeFetcher({ ...found, entities: { ...found.entities, Q1340566: english } });
-    await researchArtist(artist(), fetcher, now);
+    await researchArtist(artist(), noPlaces, deps(fetcher), now);
     expect(fetcher.mock.calls.at(-1)?.[0]).toBe("https://en.wikipedia.org/api/rest_v1/page/summary/Lasar_Segall");
 
     const none = { ...segall, sitelinks: {} };
-    const research = await researchArtist(artist(), fakeFetcher({ ...found, entities: { ...found.entities, Q1340566: none } }), now);
+    const research = await researchArtist(artist(), noPlaces, deps(fakeFetcher({ ...found, entities: { ...found.entities, Q1340566: none } })), now);
     expect(research.sources.at(-1)).toEqual({ source: "wikipedia", status: "no_match", detail: null });
   });
 
   it("returns no findings when no person is certainly the artist", async () => {
-    const research = await researchArtist(artist({ birthDate: date(1700) }), fakeFetcher(found), now);
+    const research = await researchArtist(artist({ birthDate: date(1700) }), noPlaces, deps(fakeFetcher(found)), now);
     expect(research).toEqual({
       match: null,
       findings: [],
       sources: [{ source: "wikidata", status: "no_match", detail: null }],
+      period: null,
+      summary: { status: "no_findings", text: null, citations: [], prompt: null, model: null, detail: null },
       retrievedAt: "2026-10-18T06:00:00.000Z",
     });
-    const empty = await researchArtist(artist(), fakeFetcher({ search: { search: [] } }), now);
+    const empty = await researchArtist(artist(), noPlaces, deps(fakeFetcher({ search: { search: [] } })), now);
     expect(empty.match).toBeNull();
   });
 
   it("reports a source that fails instead of failing the whole research", async () => {
-    const down = await researchArtist(artist(), fakeFetcher({ ...found, fail: /wbsearchentities/ }), now);
+    const down = await researchArtist(artist(), noPlaces, deps(fakeFetcher({ ...found, fail: /wbsearchentities/ })), now);
     expect(down.sources).toEqual([{ source: "wikidata", status: "error", detail: "www.wikidata.org answered 503" }]);
 
-    const noLabels = await researchArtist(artist(), fakeFetcher({ ...found, fail: /props=labels&/ }), now);
+    const noLabels = await researchArtist(artist(), noPlaces, deps(fakeFetcher({ ...found, fail: /props=labels&/ })), now);
     expect(noLabels.sources[0]).toEqual({ source: "wikidata", status: "error", detail: "labels: www.wikidata.org answered 503" });
     expect(noLabels.findings.find((finding) => finding.property === "birthPlace")?.value).toBe("Q216");
 
-    const noWikipedia = await researchArtist(artist(), fakeFetcher({ ...found, fail: /wikipedia/ }), now);
+    const noWikipedia = await researchArtist(artist(), noPlaces, deps(fakeFetcher({ ...found, fail: /wikipedia/ })), now);
     expect(noWikipedia.sources.at(-1)).toEqual({ source: "wikipedia", status: "error", detail: "pt.wikipedia.org answered 503" });
 
     const thrown = vi.fn<Fetcher>(async () => {
       throw "network down";
     });
-    expect((await researchArtist(artist(), thrown, now)).sources[0]?.detail).toBe("network down");
+    expect((await researchArtist(artist(), noPlaces, deps(thrown), now)).sources[0]?.detail).toBe("network down");
+  });
+});
+
+// Warsaw in 1905 lay in the Russian Empire: a square around it is enough here.
+const russianStates: States = {
+  features: [
+    {
+      properties: { name: "Império Russo", start: "1886-01-01", end: "1917-12-31" },
+      geometry: { type: "Polygon", coordinates: [[[15, 45], [40, 45], [40, 60], [15, 60], [15, 45]]] },
+    },
+  ],
+};
+const russianEmpire = { type: "FeatureCollection", ...russianStates };
+const answer = (text: string) => ({ candidates: [{ content: { parts: [{ text }] } }], modelVersion: "gemini-test" });
+
+describe("researchArtist with the period's map and the model", () => {
+  const warsaw = { id: "w", label: "Varsóvia", path: ["Polônia", "Varsóvia"], country: "Polônia", currentName: null, lat: 52.2, lng: 21 };
+
+  it("reads the map at the artist's birth and summarises the findings within it", async () => {
+    const fetcher = fakeFetcher({ ...found, gemini: answer("Nasceu em 1889 [1].") });
+    const states = vi.fn(async () => russianStates);
+    const research = await researchArtist(
+      artist(),
+      { birth: warsaw, death: null },
+      deps(fetcher, { states, gemini: { apiKey: "k", model: "m" } }),
+      now,
+    );
+    expect(research.period).toMatchObject({ day: "1889-07-01", birthState: "Império Russo", states: ["Império Russo"] });
+    expect(research.summary).toMatchObject({ status: "ok", text: "Nasceu em 1889 [1].", citations: [1], model: "gemini-test" });
+    expect(research.summary.prompt).toContain("Estado que continha o local de nascimento nesse dia: Império Russo.");
   });
 });
 
@@ -244,29 +298,37 @@ describe("createResearchCache", () => {
   it("asks the sources once per artist a day, and again after a failure", async () => {
     let clock = new Date("2026-10-18T06:00:00Z");
     const fetcher = fakeFetcher(found);
-    const research = createResearchCache(fetcher, 60_000, () => clock);
+    const research = createResearchCache(deps(fetcher), 60_000, () => clock);
 
-    await research(artist());
+    await research(artist(), noPlaces);
     const calls = fetcher.mock.calls.length;
-    await research(artist());
+    await research(artist(), noPlaces);
     expect(fetcher.mock.calls.length).toBe(calls);
 
     clock = new Date("2026-10-18T06:02:00Z");
-    await research(artist());
+    await research(artist(), noPlaces);
     expect(fetcher.mock.calls.length).toBe(calls * 2);
 
     const failing = fakeFetcher({ fail: /./ });
-    const flaky = createResearchCache(failing, 60_000, () => clock);
-    await flaky(artist());
-    await flaky(artist());
+    const flaky = createResearchCache(deps(failing), 60_000, () => clock);
+    await flaky(artist(), noPlaces);
+    await flaky(artist(), noPlaces);
     expect(failing).toHaveBeenCalledTimes(2);
+  });
+
+  it("asks again when the summary failed", async () => {
+    const fetcher = fakeFetcher({ ...found, fail: /generativelanguage/ });
+    const research = createResearchCache(deps(fetcher, { gemini: { apiKey: "k", model: "m" } }));
+    expect((await research(artist(), noPlaces)).summary.status).toBe("error");
+    await research(artist(), noPlaces);
+    expect(fetcher.mock.calls.filter(([url]) => url.includes("generativelanguage"))).toHaveLength(2);
   });
 
   it("uses the real clock and a day's lifetime by default", async () => {
     const fetcher = fakeFetcher(found);
-    const research = createResearchCache(fetcher);
-    await research(artist());
-    await research(artist());
+    const research = createResearchCache(deps(fetcher));
+    await research(artist(), noPlaces);
+    await research(artist(), noPlaces);
     expect(fetcher.mock.calls.filter(([url]) => url.includes("wbsearchentities"))).toHaveLength(1);
   });
 });
@@ -278,6 +340,34 @@ describe("research query", () => {
       `{ research(slug: "artista-demo-a") { artist { slug } match { id } sources { status } findings { value } } }`,
     );
     expect(result.data?.research).toEqual({ artist: { slug: "artista-demo-a" }, match: null, sources: [{ status: "no_match" }], findings: [] });
+  });
+
+  it("gives the period's map and the summary with its prompt", async () => {
+    const fetcher = fakeFetcher({ ...found, search: { search: [] }, states: russianEmpire });
+    const { gql } = createTestApp(null, fetcher);
+    const result = await gql<{ research: { period: unknown; summary: { status: string; prompt: string | null } } }>(
+      `{ research(slug: "artista-demo-a") { period { day approximate birthState states } summary { status text citations prompt model detail } } }`,
+    );
+    expect(result.data?.research.period).toEqual({
+      day: "1905-07-01",
+      approximate: false,
+      birthState: "Império Russo",
+      states: ["Império Russo"],
+    });
+    expect(result.data?.research.summary).toMatchObject({ status: "no_findings", prompt: null });
+    expect(fetcher.mock.calls.some(([url]) => url === testEnv.CARTOGRAPHY_URL)).toBe(true);
+  });
+
+  it("asks Gemini only when a key is configured", async () => {
+    const fetcher = fakeFetcher({ ...found, entities: { ...found.entities, Q1340566: { ...segall, claims: { ...segall.claims, P569: [claim(time("1905-01-01", 9))] } } }, gemini: answer("Pintor [1].") });
+    const app = createApp(loadEnv({ NODE_ENV: "test", GEMINI_API_KEY: "k" }), { db: null, fetcher });
+    const response = await app.fetch("http://localhost/graphql", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ query: `{ research(slug: "artista-demo-a") { summary { status text } } }` }),
+    });
+    const body = (await response.json()) as { data: { research: { summary: unknown } } };
+    expect(body.data.research.summary).toEqual({ status: "ok", text: "Pintor [1]." });
   });
 
   it("returns null for an unknown artist", async () => {

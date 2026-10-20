@@ -202,6 +202,41 @@ export const typeDefs = /* GraphQL */ `
     detail: String
   }
 
+  enum SummaryStatus {
+    ok
+    "No Gemini key is configured; the prompt is still returned."
+    not_configured
+    "No certain match or no findings, so nothing to summarise."
+    no_findings
+    "The answer cited no finding, or one that does not exist, so its text is withheld."
+    rejected
+    error
+  }
+
+  "The AI summary of the findings. Every claim cites a finding as [n], n counting from 1 in Research.findings."
+  type ResearchSummary {
+    status: SummaryStatus!
+    text: String
+    "Finding numbers the text cites, in order of first mention."
+    citations: [Int!]!
+    "Exactly what is (or would be) sent to the model: instructions, then data."
+    prompt: String
+    "Model version that answered."
+    model: String
+    detail: String
+  }
+
+  "The map of Europe on the artist's birth (CShapes 2.0), given to the model so it reasons with that period's states."
+  type ResearchPeriod {
+    "Day the map is read on: 1 July of the birth year."
+    day: String!
+    "Whether the birth year is approximate in the collection."
+    approximate: Boolean!
+    "State that held the birthplace that day, if any."
+    birthState: String
+    states: [String!]!
+  }
+
   "Open-source research on an artist. Findings are never written to the collection."
   type Research {
     artist: Artist!
@@ -209,6 +244,9 @@ export const typeDefs = /* GraphQL */ `
     match: ResearchMatch
     findings: [Finding!]!
     sources: [SourceStatus!]!
+    "Null when the birth year is unknown, outside 1886–2019, or the borders could not be loaded."
+    period: ResearchPeriod
+    summary: ResearchSummary!
     "ISO time the sources were read (answers are cached for a day)."
     retrievedAt: String!
   }
@@ -300,9 +338,11 @@ export const resolvers = {
     work: async (_: unknown, args: { id: string }, context: AppContext) =>
       (await context.data()).work.get(args.id) ?? null,
     research: async (_: unknown, args: { slug: string }, context: AppContext) => {
-      const artist = (await context.data()).artistBySlug.get(args.slug);
+      const data = await context.data();
+      const artist = data.artistBySlug.get(args.slug);
       if (!artist) return null;
-      return { artist, ...(await context.research(artist)) };
+      const places = { birth: placeOf(artist.birthPlaceId, data), death: placeOf(artist.deathPlaceId, data) };
+      return { artist, ...(await context.research(artist, places)) };
     },
   },
   Artist: {

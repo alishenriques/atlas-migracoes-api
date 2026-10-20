@@ -3,17 +3,24 @@ import { createContext } from "./context.js";
 import { createDatabase, type Database } from "./db/client.js";
 import { schema } from "./graphql/schema.js";
 import { createResearchCache } from "./research/research.js";
+import { createStatesLoader } from "./research/territories.js";
 import type { Fetcher } from "./research/wikimedia.js";
 import { loadEnv, type Env } from "./schemas/domain.js";
 
 export type AppDependencies = {
   db?: Database | null;
-  /** How the open sources are reached; tests pass a fake. */
+  /** How the open sources, the borders file and Gemini are reached; tests pass a fake. */
   fetcher?: Fetcher;
 };
 
 export function createApp(env: Env = loadEnv(), deps: AppDependencies = {}) {
   const db = deps.db !== undefined ? deps.db : createDatabase(env);
+  const fetcher = deps.fetcher ?? fetch;
+  const research = createResearchCache({
+    fetcher,
+    gemini: env.GEMINI_API_KEY ? { apiKey: env.GEMINI_API_KEY, model: env.GEMINI_MODEL } : null,
+    states: createStatesLoader(fetcher, env.CARTOGRAPHY_URL),
+  });
 
   return createYoga({
     schema,
@@ -23,6 +30,6 @@ export function createApp(env: Env = loadEnv(), deps: AppDependencies = {}) {
       credentials: false,
       allowedHeaders: ["Content-Type"],
     },
-    context: createContext(env, db, createResearchCache(deps.fetcher ?? fetch)),
+    context: createContext(env, db, research),
   });
 }

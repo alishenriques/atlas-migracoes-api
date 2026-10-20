@@ -1,7 +1,7 @@
 import type { Database } from "./db/client.js";
 import { indexDataset, loadDataset, type DatasetIndex } from "./db/dataset.js";
 import { demoDataset } from "./db/fallback.js";
-import type { Research } from "./research/research.js";
+import type { ArtistPlaces, Research } from "./research/research.js";
 import type { Artist, DataSource, Env } from "./schemas/domain.js";
 
 export type AppContext = {
@@ -11,7 +11,7 @@ export type AppContext = {
   /** The collection, loaded at most once per request. */
   data: () => Promise<DatasetIndex>;
   /** Open-source research on an artist, cached per artist (see research/research.ts). */
-  research: (artist: Artist) => Promise<Research>;
+  research: (artist: Artist, places: ArtistPlaces) => Promise<Research>;
 };
 
 const demoIndex = indexDataset(demoDataset);
