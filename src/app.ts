@@ -1,6 +1,7 @@
 import { createYoga } from "graphql-yoga";
 import { createContext } from "./context.js";
 import { createDatabase, type Database } from "./db/client.js";
+import { queryLimits } from "./graphql/limits.js";
 import { schema } from "./graphql/schema.js";
 import { createResearchCache } from "./research/research.js";
 import { createStatesLoader } from "./research/territories.js";
@@ -25,6 +26,9 @@ export function createApp(env: Env = loadEnv(), deps: AppDependencies = {}) {
   return createYoga({
     schema,
     graphqlEndpoint: "/graphql",
+    // The explorer page is for local development; the public API serves the app only.
+    graphiql: env.NODE_ENV !== "production",
+    plugins: queryLimits(),
     cors: {
       origin: env.CORS_ORIGIN,
       credentials: false,
