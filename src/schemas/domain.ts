@@ -15,6 +15,12 @@ export const envSchema = z.object({
     )
     .pipe(z.array(z.string().url()).min(1)),
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
+  /** Gemini API key (free tier). Without it the IA Relacional shows findings but no summary. */
+  GEMINI_API_KEY: z.string().min(1).optional(),
+  /** Gemini model; the "latest" alias follows Google's current free Flash model. */
+  GEMINI_MODEL: z.string().min(1).default("gemini-flash-latest"),
+  /** The period's state borders (CShapes 2.0), published by the app; read to give the AI the period's map. */
+  CARTOGRAPHY_URL: z.string().url().default("https://atlas-migracoes.vercel.app/cartography/europe-states.geojson"),
 });
 
 export type Env = z.infer<typeof envSchema>;

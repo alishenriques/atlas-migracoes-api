@@ -1,4 +1,6 @@
-import type { Artist, FuzzyDate } from "../schemas/domain.js";
+import type { Artist, FuzzyDate, Place } from "../schemas/domain.js";
+import { summarize, type GeminiConfig, type Summary } from "./summary.js";
+import { periodContext, type PeriodContext, type States } from "./territories.js";
 import {
   claimsOf,
   descriptionOf,
@@ -73,7 +75,22 @@ export type Research = {
   match: Match | null;
   findings: Finding[];
   sources: SourceStatus[];
+  /** The map of Europe at the artist's birth, given to the model; null when unknown. */
+  period: PeriodContext | null;
+  /** The AI summary of the findings, with its prompt. */
+  summary: Summary;
   retrievedAt: string;
+};
+
+/** Where the artist was born and died, as the collection records it. */
+export type ArtistPlaces = { birth: Place | null; death: Place | null };
+
+export type ResearchDeps = {
+  fetcher: Fetcher;
+  /** Null when no Gemini key is configured. */
+  gemini: GeminiConfig | null;
+  /** The period's borders; null when they could not be loaded. */
+  states: () => Promise<States | null>;
 };
 
 const HUMAN = "Q5";
@@ -147,32 +164,20 @@ export function wikidataFindings(entity: Entity, artist: Artist, labels: Map<str
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
 /**
- * Looks the artist up in open sources: the matching Wikidata item, its
- * statements on the artist's life and career, and the lead of the Wikipedia
- * article Wikidata links to (Portuguese, else English). Every finding keeps
- * its source page; nothing found here is written to the collection.
+ * The matching Wikidata item, its statements on the artist's life and career,
+ * and the lead of the Wikipedia article Wikidata links to (Portuguese, else
+ * English). Every finding keeps its source page.
  */
-export async function researchArtist(artist: Artist, fetcher: Fetcher, now = new Date()): Promise<Research> {
-  const retrievedAt = now.toISOString();
+async function lookUp(artist: Artist, fetcher: Fetcher): Promise<Pick<Research, "match" | "findings" | "sources">> {
   let match: { entity: Entity; basis: Match["basis"] } | null;
   try {
     const ids = await searchItems(fetcher, artist.name);
     match = pickMatch(artist, ids.length ? await getEntities(fetcher, ids) : []);
   } catch (error) {
-    return {
-      match: null,
-      findings: [],
-      sources: [{ source: "wikidata", status: "error", detail: message(error) }],
-      retrievedAt,
-    };
+    return { match: null, findings: [], sources: [{ source: "wikidata", status: "error", detail: message(error) }] };
   }
   if (!match) {
-    return {
-      match: null,
-      findings: [],
-      sources: [{ source: "wikidata", status: "no_match", detail: null }],
-      retrievedAt,
-    };
+    return { match: null, findings: [], sources: [{ source: "wikidata", status: "no_match", detail: null }] };
   }
 
   const { entity, basis } = match;
@@ -223,23 +228,48 @@ export async function researchArtist(artist: Artist, fetcher: Fetcher, now = new
     match: { id: entity.id, label: labelOf(entity), description: descriptionOf(entity), url: entityUrl(entity.id), basis },
     findings,
     sources,
-    retrievedAt,
   };
 }
 
 /**
- * Keeps each artist's research for `ttlMs` (a day by default) in the running
- * instance, so the open sources are asked once per artist and not on every
- * view. A failed lookup is not kept, so the next view tries again.
+ * Looks the artist up in open sources (see `lookUp`), reads the map of Europe
+ * at their birth, and asks the model to summarise the findings within that
+ * period's geopolitics. Nothing found here is written to the collection.
  */
-export function createResearchCache(fetcher: Fetcher, ttlMs = 24 * 60 * 60 * 1000, clock = () => new Date()) {
+export async function researchArtist(
+  artist: Artist,
+  places: ArtistPlaces,
+  deps: ResearchDeps,
+  now = new Date(),
+): Promise<Research> {
+  const [found, states] = await Promise.all([lookUp(artist, deps.fetcher), deps.states()]);
+  const period = states ? periodContext(states, artist, places.birth) : null;
+  const summary = await summarize(deps.fetcher, deps.gemini, {
+    artist,
+    birthPlace: places.birth,
+    deathPlace: places.death,
+    match: found.match,
+    findings: found.findings,
+    period,
+  });
+  return { ...found, period, summary, retrievedAt: now.toISOString() };
+}
+
+/**
+ * Keeps each artist's research for `ttlMs` (a day by default) in the running
+ * instance, so the open sources and the model are asked once per artist and
+ * not on every view. A failed lookup or summary is not kept, so the next view
+ * tries again.
+ */
+export function createResearchCache(deps: ResearchDeps, ttlMs = 24 * 60 * 60 * 1000, clock = () => new Date()) {
   const entries = new Map<string, { at: number; research: Promise<Research> }>();
-  return (artist: Artist): Promise<Research> => {
+  return (artist: Artist, places: ArtistPlaces): Promise<Research> => {
     const now = clock();
     const cached = entries.get(artist.id);
     if (cached && now.getTime() - cached.at < ttlMs) return cached.research;
-    const research = researchArtist(artist, fetcher, now).then((result) => {
-      if (result.sources.some((source) => source.status === "error")) entries.delete(artist.id);
+    const research = researchArtist(artist, places, deps, now).then((result) => {
+      const failed = result.sources.some((source) => source.status === "error") || result.summary.status === "error";
+      if (failed) entries.delete(artist.id);
       return result;
     });
     entries.set(artist.id, { at: now.getTime(), research });
