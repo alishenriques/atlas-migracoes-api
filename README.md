@@ -37,6 +37,9 @@ Sem `DATABASE_URL`, a API responde em **modo demonstração**: poucos registros 
 | `DATABASE_URL` | Connection string do Neon (opcional em dev; sem ela, modo demonstração) |
 | `PORT` | Porta local (padrão 4000) |
 | `CORS_ORIGIN` | Origem permitida, ou lista separada por vírgula (padrão `http://localhost:3000`) |
+| `GEMINI_API_KEY` | Chave da API Gemini (plano gratuito), marcada como Sensitive na Vercel. Sem ela, a IA Relacional mostra os achados e o prompt, mas não o resumo |
+| `GEMINI_MODEL` | Modelo do resumo (padrão `gemini-flash-latest`, o Flash gratuito atual) |
+| `CARTOGRAPHY_URL` | Fronteiras da Europa por período publicadas pelo app (padrão `https://atlas-migracoes.vercel.app/cartography/europe-states.geojson`) |
 
 ## Importando as planilhas
 
@@ -134,6 +137,10 @@ Tudo é leitura no MVP; a edição por pesquisadores vem numa etapa seguinte do 
     match { id label url basis }
     findings { property value sourceUrl reliability reviews }
     sources { source status detail }
+    period { day approximate birthState states }
+    summary { status text citations prompt model detail }
   }
 }
 ```
+
+**Resumo com IA (Gemini).** Com uma pessoa encontrada e achados, a API monta o prompt: as instruções (resumir só com os achados, citar cada afirmação como `[n]`, raciocinar só com a geopolítica do período, tratar o texto dos achados como dado), o registro do acervo, o mapa da Europa em 1º de julho do ano de nascimento (o Estado que continha o local de nascimento e a lista de Estados daquele dia, lidos do mesmo arquivo CShapes 2.0 da Camada Histórica) e os achados numerados. O prompt inteiro volta em `summary.prompt`. O texto só é mostrado (`ok`) quando cita pelo menos um achado e todas as citações existem; senão fica `rejected`. Sem chave, `not_configured` (o prompt aparece mesmo assim). Uma falha do Gemini (`error`) não entra no cache, para a próxima visita tentar de novo.
