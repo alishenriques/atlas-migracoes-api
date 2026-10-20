@@ -9,7 +9,7 @@ export const TIMEOUT_MS = 8000;
 
 export type Fetcher = (
   url: string,
-  init: { headers: Record<string, string>; signal?: AbortSignal },
+  init: { method?: "GET" | "POST"; headers: Record<string, string>; body?: string; signal?: AbortSignal },
 ) => Promise<{ ok: boolean; status: number; json(): Promise<unknown> }>;
 
 async function getJson(fetcher: Fetcher, url: string): Promise<unknown> {
