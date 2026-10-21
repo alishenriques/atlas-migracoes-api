@@ -14,7 +14,10 @@ export function storedResearch(db: Database): StoredResearch {
       .select({ research: researchResults.research })
       .from(researchResults)
       .where(eq(researchResults.artistId, artist.id));
-    return row?.research ?? null;
+    if (!row) return null;
+    // Results stored before searched names and candidates were recorded lack them.
+    const { searchedNames = [], candidates = [] }: Partial<Research> = row.research;
+    return { ...row.research, searchedNames, candidates };
   };
 }
 

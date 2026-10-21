@@ -71,8 +71,34 @@ export type Match = {
   basis: "birth_year" | "name";
 };
 
+/**
+ * Why a person Wikidata returned was not taken to be the artist:
+ * - `birth_year_differs`: Wikidata gives another birth year than the collection.
+ * - `no_birth_year`: Wikidata has no birth year to compare.
+ * - `ambiguous`: more than one person fits the collection's birth year (or name).
+ * - `shorter_name`: fits, but only turned up when searching a shorter form of the name.
+ * - `name_differs`: the collection has no birth year and the name is not exactly the same.
+ */
+export type CandidateReason = "birth_year_differs" | "no_birth_year" | "ambiguous" | "shorter_name" | "name_differs";
+
+/** A person Wikidata returned that was not linked to the artist: a lead for a researcher to check, never a finding. */
+export type Candidate = {
+  id: string;
+  label: string;
+  description: string | null;
+  url: string;
+  birthYear: number | null;
+  /** The name that was searched when this person turned up. */
+  foundBy: string;
+  reason: CandidateReason;
+};
+
 export type Research = {
+  /** The names searched on Wikidata: the collection's, then a shorter form when it has middle names. */
+  searchedNames: string[];
   match: Match | null;
+  /** Up to five people Wikidata returned but none certainly the artist; empty when there is a match. */
+  candidates: Candidate[];
   findings: Finding[];
   sources: SourceStatus[];
   /** The map of Europe at the artist's birth, given to the model; null when unknown. */
@@ -132,6 +158,43 @@ export function pickMatch(artist: Artist, candidates: Entity[]): { entity: Entit
   return named.length === 1 ? { entity: named[0] as Entity, basis: "name" } : null;
 }
 
+/** The collection's name, then first and last name only when it has middle names ("Maciej Antoni Babinski" → "Maciej Babinski"). */
+export function searchNames(name: string): string[] {
+  const parts = name.trim().split(/\s+/);
+  return parts.length > 2 ? [name, `${parts[0]} ${parts.at(-1)}`] : [name];
+}
+
+/**
+ * The people returned for the artist's names, each with why it was not
+ * linked. Only called when there is no match, so a person that fits was
+ * either one of several or found under a shorter name.
+ */
+export function candidatesOf(artist: Artist, entities: Entity[], foundBy: Map<string, string>): Candidate[] {
+  const span = yearSpan(artist.birthDate);
+  const fits = (entity: Entity) => {
+    if (!span) return normalize(labelOf(entity)) === normalize(artist.name);
+    const year = yearOf(entity, "P569");
+    return year !== null && year >= span[0] && year <= span[1];
+  };
+  return entities
+    .filter(isHuman)
+    .slice(0, 5)
+    .map((entity) => {
+      const birthYear = yearOf(entity, "P569");
+      const by = foundBy.get(entity.id) ?? artist.name;
+      const reason: CandidateReason = fits(entity)
+        ? by === artist.name
+          ? "ambiguous"
+          : "shorter_name"
+        : !span
+          ? "name_differs"
+          : birthYear === null
+            ? "no_birth_year"
+            : "birth_year_differs";
+      return { id: entity.id, label: labelOf(entity), description: descriptionOf(entity), url: entityUrl(entity.id), birthYear, foundBy: by, reason };
+    });
+}
+
 function conflicts(property: FindingProperty, value: ClaimValue, artist: Artist): boolean {
   if (value.kind !== "time") return false;
   const date = property === "birthDate" ? artist.birthDate : property === "deathDate" ? artist.deathDate : null;
@@ -168,16 +231,28 @@ const message = (error: unknown) => (error instanceof Error ? error.message : St
  * and the lead of the Wikipedia article Wikidata links to (Portuguese, else
  * English). Every finding keeps its source page.
  */
-async function lookUp(artist: Artist, fetcher: Fetcher): Promise<Pick<Research, "match" | "findings" | "sources">> {
+async function lookUp(
+  artist: Artist,
+  fetcher: Fetcher,
+): Promise<Pick<Research, "searchedNames" | "match" | "candidates" | "findings" | "sources">> {
+  const searchedNames = searchNames(artist.name);
+  const none = { searchedNames, match: null, candidates: [], findings: [] };
   let match: { entity: Entity; basis: Match["basis"] } | null;
+  let candidates: Candidate[] = [];
   try {
-    const ids = await searchItems(fetcher, artist.name);
-    match = pickMatch(artist, ids.length ? await getEntities(fetcher, ids) : []);
+    // Each id remembers the first name that found it; only the collection's own name can give a match.
+    const foundBy = new Map<string, string>();
+    for (const name of searchedNames) {
+      for (const id of await searchItems(fetcher, name)) if (!foundBy.has(id)) foundBy.set(id, name);
+    }
+    const entities = foundBy.size ? await getEntities(fetcher, [...foundBy.keys()]) : [];
+    match = pickMatch(artist, entities.filter((entity) => foundBy.get(entity.id) === artist.name));
+    if (!match) candidates = candidatesOf(artist, entities, foundBy);
   } catch (error) {
-    return { match: null, findings: [], sources: [{ source: "wikidata", status: "error", detail: message(error) }] };
+    return { ...none, sources: [{ source: "wikidata", status: "error", detail: message(error) }] };
   }
   if (!match) {
-    return { match: null, findings: [], sources: [{ source: "wikidata", status: "no_match", detail: null }] };
+    return { ...none, candidates, sources: [{ source: "wikidata", status: "no_match", detail: null }] };
   }
 
   const { entity, basis } = match;
@@ -225,7 +300,9 @@ async function lookUp(artist: Artist, fetcher: Fetcher): Promise<Pick<Research, 
   }
 
   return {
+    searchedNames,
     match: { id: entity.id, label: labelOf(entity), description: descriptionOf(entity), url: entityUrl(entity.id), basis },
+    candidates: [],
     findings,
     sources,
   };
