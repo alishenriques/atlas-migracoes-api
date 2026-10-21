@@ -6,7 +6,12 @@ import { TIMEOUT_MS, type Fetcher } from "./wikimedia.js";
 
 export const GEMINI_API = "https://generativelanguage.googleapis.com/v1beta/models";
 
-export type GeminiConfig = { apiKey: string; model: string };
+export type GeminiConfig = {
+  apiKey: string;
+  model: string;
+  /** How long to wait for an answer; the API keeps it short, the generation script can wait longer. */
+  timeoutMs?: number;
+};
 
 /**
  * - `ok`: the model answered and every reference it made points to a finding.
@@ -112,7 +117,7 @@ const responseSchema = z.object({
 /** Asks Gemini for the summary; returns its text and the model version. */
 export async function askGemini(
   fetcher: Fetcher,
-  { apiKey, model }: GeminiConfig,
+  { apiKey, model, timeoutMs = TIMEOUT_MS * 2 }: GeminiConfig,
   prompt: ReturnType<typeof buildPrompt>,
 ): Promise<{ text: string; model: string }> {
   const response = await fetcher(`${GEMINI_API}/${encodeURIComponent(model)}:generateContent`, {
@@ -124,7 +129,7 @@ export async function askGemini(
       // Low temperature: the summary restates findings, it does not invent.
       generationConfig: { temperature: 0.2 },
     }),
-    signal: AbortSignal.timeout(TIMEOUT_MS * 2),
+    signal: AbortSignal.timeout(timeoutMs),
   });
   if (!response.ok) throw new Error(`Gemini answered ${response.status}`);
   const body = responseSchema.parse(await response.json());

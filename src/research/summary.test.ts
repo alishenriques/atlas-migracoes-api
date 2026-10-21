@@ -117,6 +117,14 @@ describe("summarize", () => {
     });
   });
 
+  it("waits as long as the configured timeout", async () => {
+    const timeout = vi.spyOn(AbortSignal, "timeout");
+    await summarize(replying(text("Pintor [1].")), gemini, input);
+    await summarize(replying(text("Pintor [1].")), { ...gemini, timeoutMs: 60_000 }, input);
+    expect(timeout.mock.calls).toEqual([[16_000], [60_000]]);
+    timeout.mockRestore();
+  });
+
   it("falls back to the configured model name when Gemini does not report one", async () => {
     const summary = await summarize(replying({ candidates: [{ content: { parts: [{ text: "Pintor [1]." }] } }] }), gemini, input);
     expect(summary.model).toBe("gemini-flash-latest");
