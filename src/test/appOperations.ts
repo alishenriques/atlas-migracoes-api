@@ -264,12 +264,22 @@ export const appOperations: Record<string, string> = {
           ...MapDate
         }
       }
+      searchedNames
       match {
         id
         label
         description
         url
         basis
+      }
+      candidates {
+        id
+        label
+        description
+        url
+        birthYear
+        foundBy
+        reason
       }
       findings {
         source
