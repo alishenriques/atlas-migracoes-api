@@ -3,7 +3,7 @@ import type { Artist, FuzzyDate } from "../schemas/domain.js";
 import { createApp } from "../app.js";
 import { loadEnv } from "../schemas/domain.js";
 import { createTestApp, testEnv } from "../test/helpers.js";
-import { createResearchCache, pickMatch, researchArtist, type ResearchDeps } from "./research.js";
+import { candidatesOf, createResearchCache, pickMatch, researchArtist, searchNames, type ResearchDeps } from "./research.js";
 import type { States } from "./territories.js";
 import { claimsOf, getEntities, readValue, USER_AGENT, type Entity, type Fetcher } from "./wikimedia.js";
 
@@ -178,6 +178,41 @@ describe("pickMatch", () => {
   });
 });
 
+describe("searchNames", () => {
+  it("adds first and last name only when the name has middle names", () => {
+    expect(searchNames("Maciej Antoni Babinski")).toEqual(["Maciej Antoni Babinski", "Maciej Babinski"]);
+    expect(searchNames("Lasar Segall")).toEqual(["Lasar Segall"]);
+  });
+});
+
+describe("candidatesOf", () => {
+  const entities = [segall, namesake, street].map((entity) => ({ descriptions: {}, sitelinks: {}, ...entity })) as Entity[];
+  const by = (name: string) => new Map(entities.map((entity) => [entity.id, name]));
+
+  it("says when several people fit, or one fits only under a shorter name", () => {
+    const twin = { ...entities[0], id: "Q2" } as Entity;
+    expect(candidatesOf(artist(), [entities[0] as Entity, twin], by("Lasar Segall")).map((c) => c.reason)).toEqual(["ambiguous", "ambiguous"]);
+    expect(candidatesOf(artist({ name: "Lasar Ignacy Segall" }), entities, by("Lasar Segall"))[0]).toMatchObject({
+      foundBy: "Lasar Segall",
+      reason: "shorter_name",
+    });
+  });
+
+  it("says when Wikidata has no birth year, or the collection has none and the name differs", () => {
+    const undated = { ...entities[1], claims: { P31: segall.claims.P31 } } as Entity;
+    expect(candidatesOf(artist(), [undated], by("Lasar Segall"))[0]).toMatchObject({ birthYear: null, reason: "no_birth_year" });
+    expect(candidatesOf(artist({ birthDate: date(null), name: "Lasar Segal" }), entities, new Map())[0]).toMatchObject({
+      foundBy: "Lasar Segal",
+      reason: "name_differs",
+    });
+  });
+
+  it("keeps at most five people", () => {
+    const many = Array.from({ length: 7 }, (_, i) => ({ ...entities[1], id: `Q${i}` }) as Entity);
+    expect(candidatesOf(artist(), many, new Map())).toHaveLength(5);
+  });
+});
+
 describe("researchArtist", () => {
   it("traces every finding to its source page and flags what needs review", async () => {
     const research = await researchArtist(artist(), noPlaces, deps(fakeFetcher(found)), now);
@@ -235,7 +270,20 @@ describe("researchArtist", () => {
   it("returns no findings when no person is certainly the artist", async () => {
     const research = await researchArtist(artist({ birthDate: date(1700) }), noPlaces, deps(fakeFetcher(found)), now);
     expect(research).toEqual({
+      searchedNames: ["Lasar Segall"],
       match: null,
+      candidates: [
+        {
+          id: "Q1340566",
+          label: "Lasar Segall",
+          description: "pintor lituano-brasileiro",
+          url: "https://www.wikidata.org/wiki/Q1340566",
+          birthYear: 1889,
+          foundBy: "Lasar Segall",
+          reason: "birth_year_differs",
+        },
+        { id: "Q999", label: "Lasar Segall", description: null, url: "https://www.wikidata.org/wiki/Q999", birthYear: 1950, foundBy: "Lasar Segall", reason: "birth_year_differs" },
+      ],
       findings: [],
       sources: [{ source: "wikidata", status: "no_match", detail: null }],
       period: null,
@@ -244,6 +292,23 @@ describe("researchArtist", () => {
     });
     const empty = await researchArtist(artist(), noPlaces, deps(fakeFetcher({ search: { search: [] } })), now);
     expect(empty.match).toBeNull();
+    expect(empty.candidates).toEqual([]);
+  });
+
+  it("searches a shorter name too, but never links the person it finds", async () => {
+    // Wikidata knows him only as "Lasar Segall".
+    const known = fakeFetcher(found);
+    const fetcher = vi.fn<Fetcher>(async (url, init) =>
+      new URL(url).searchParams.get("search") === "Lasar Ignacy Segall"
+        ? { ok: true, status: 200, json: async () => ({ search: [] }) }
+        : known(url, init),
+    );
+    const research = await researchArtist(artist({ name: "Lasar Ignacy Segall" }), noPlaces, deps(fetcher), now);
+    const searched = fetcher.mock.calls.map(([url]) => new URL(url).searchParams.get("search")).filter(Boolean);
+    expect(searched).toEqual(["Lasar Ignacy Segall", "Lasar Segall"]);
+    expect(research.searchedNames).toEqual(["Lasar Ignacy Segall", "Lasar Segall"]);
+    expect(research.match).toBeNull();
+    expect(research.candidates[0]).toMatchObject({ id: "Q1340566", foundBy: "Lasar Segall", reason: "shorter_name" });
   });
 
   it("reports a source that fails instead of failing the whole research", async () => {

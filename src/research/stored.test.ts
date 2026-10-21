@@ -75,7 +75,9 @@ describe("generateResearch", () => {
     const { db, data } = await seeded("a");
     const research = vi.spyOn(await import("./research.js"), "researchArtist");
     research.mockResolvedValueOnce({
+      searchedNames: ["Artista a"],
       match: null,
+      candidates: [],
       findings: [],
       sources: [{ source: "wikidata", status: "ok", detail: null }],
       period: null,
@@ -124,7 +126,9 @@ describe("generateResearch", () => {
 
 describe("research with stored results", () => {
   const research = (overrides: Partial<Research> = {}): Research => ({
+    searchedNames: [],
     match: null,
+    candidates: [],
     findings: [],
     sources: [],
     period: null,
@@ -148,6 +152,13 @@ describe("research with stored results", () => {
     const fetcher = sources();
     const cache = createResearchCache({ ...deps(fetcher), stored: async () => Promise.reject(new Error("db down")) });
     expect((await cache(artist("a"), noPlaces)).sources[0]?.status).toBe("no_match");
+  });
+
+  it("reads a result stored before searched names and candidates were recorded", async () => {
+    const { db } = await seeded("a");
+    const { searchedNames, candidates, ...older } = research();
+    await db.insert(researchResults).values({ artistId: "id-a", research: older as Research, generatedAt: new Date() });
+    expect(await storedResearch(db)(artist("a"))).toMatchObject({ searchedNames, candidates });
   });
 
   it("serves the stored result through the research query", async () => {
