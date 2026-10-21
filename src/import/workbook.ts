@@ -16,7 +16,8 @@ const SIGNATURES: [SheetKind, string][] = [
   ["publications", "titulo-da-publicacao"],
 ];
 
-function cellValue(value: ExcelJS.CellValue): unknown {
+/** The plain value of a cell: rich text joined, formulas resolved to their result. */
+export function cellValue(value: ExcelJS.CellValue): unknown {
   if (value === null || value === undefined) return null;
   if (value instanceof Date || typeof value !== "object") return value;
   if ("richText" in value) return value.richText.map((part) => part.text).join("");

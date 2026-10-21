@@ -268,7 +268,8 @@ export const typeDefs = /* GraphQL */ `
 `;
 
 const byName = (a: Artist, b: Artist) => a.name.localeCompare(b.name, "pt-BR");
-const byStart = (a: Exhibition, b: Exhibition) =>
+/** Oldest first: an exact date, else the year; undated exhibitions go last. */
+export const byStart = (a: Pick<Exhibition, "startDate">, b: Pick<Exhibition, "startDate">) =>
   (a.startDate.iso ?? String(a.startDate.year ?? 9999)).localeCompare(b.startDate.iso ?? String(b.startDate.year ?? 9999));
 
 function pick<T>(map: Map<string, T>, ids: string[]): T[] {
