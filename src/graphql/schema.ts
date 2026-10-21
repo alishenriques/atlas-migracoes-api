@@ -180,6 +180,33 @@ export const typeDefs = /* GraphQL */ `
     basis: MatchBasis!
   }
 
+  "Why a person Wikidata returned was not taken to be the artist."
+  enum CandidateReason {
+    "Wikidata gives another birth year than the collection."
+    birth_year_differs
+    "Wikidata has no birth year to compare."
+    no_birth_year
+    "More than one person fits the collection's birth year (or name)."
+    ambiguous
+    "Fits, but only turned up when searching a shorter form of the name."
+    shorter_name
+    "The collection has no birth year and the name is not exactly the same."
+    name_differs
+  }
+
+  "A person Wikidata returned that was not linked to the artist: a lead for a researcher to check, never a finding."
+  type ResearchCandidate {
+    "Wikidata item id."
+    id: ID!
+    label: String!
+    description: String
+    url: String!
+    birthYear: Int
+    "The name that was searched when this person turned up."
+    foundBy: String!
+    reason: CandidateReason!
+  }
+
   type Finding {
     source: ResearchSource!
     "The page the finding was read from."
@@ -240,8 +267,12 @@ export const typeDefs = /* GraphQL */ `
   "Open-source research on an artist. Findings are never written to the collection."
   type Research {
     artist: Artist!
+    "Names searched on Wikidata: the collection's, then first and last name when it has middle names."
+    searchedNames: [String!]!
     "Null when no Wikidata person is certainly this artist; then there are no findings."
     match: ResearchMatch
+    "Up to five people Wikidata returned when none is certainly the artist, each with why it was not linked."
+    candidates: [ResearchCandidate!]!
     findings: [Finding!]!
     sources: [SourceStatus!]!
     "Null when the birth year is unknown, outside 1886–2019, or the borders could not be loaded."
