@@ -137,7 +137,7 @@ yarn research:generate                   # pesquisa os artistas que ainda não t
 yarn research:generate --slug lasar-segall --force   # refaz um artista
 ```
 
-Cada linha da saída diz `stored`, `kept` (já estava gravado) ou `failed` (uma fonte ou o Gemini falhou; nada é gravado, e é só rodar de novo). Há uma pausa de 6 s entre artistas (`--delay <ms>`) para ficar dentro do limite por minuto do plano gratuito. A data mostrada na tela (`retrievedAt`) é a da geração. Se a API usar um usuário só de leitura, ele precisa de `SELECT` nessa tabela também (`GRANT SELECT ON research_results TO <usuário>`).
+Cada linha da saída diz `stored`, `kept` (já estava gravado) ou `failed` (uma fonte ou o Gemini falhou; nada é gravado, e é só rodar de novo: só os que falharam são refeitos). Um artista que falha (um 503 do Gemini sobrecarregado, um timeout) é tentado mais 2 vezes, depois de 30 s e de 60 s (`--retries <n>`). Na geração o Gemini tem até 60 s para responder; na API, 16 s. Há uma pausa de 6 s entre artistas (`--delay <ms>`) para ficar dentro do limite por minuto do plano gratuito. `summary: no_findings` não é falha: o Wikidata não tem uma pessoa que seja certamente o artista, e o Gemini nem é chamado. A data mostrada na tela (`retrievedAt`) é a da geração. Se a API usar um usuário só de leitura, ele precisa de `SELECT` nessa tabela também (`GRANT SELECT ON research_results TO <usuário>`).
 
 ### Limites por requisição
 
