@@ -6,13 +6,14 @@ import { loadEnv } from "../schemas/domain.js";
 import { generateResearch } from "./stored.js";
 import { createStatesLoader } from "./territories.js";
 
-// Usage: yarn research:generate [--slug <slug> ...] [--force] [--delay <ms>]
+// Usage: yarn research:generate [--slug <slug> ...] [--force] [--delay <ms>] [--retries <n>]
 // Runs on the machine that owns the database (the owner DATABASE_URL); the API only reads the results.
 const { values } = parseArgs({
   options: {
     slug: { type: "string", multiple: true },
     force: { type: "boolean", default: false },
     delay: { type: "string", default: "6000" },
+    retries: { type: "string", default: "2" },
   },
 });
 
@@ -30,10 +31,11 @@ const outcomes = await generateResearch(
   data,
   {
     fetcher: fetch,
-    gemini: env.GEMINI_API_KEY ? { apiKey: env.GEMINI_API_KEY, model: env.GEMINI_MODEL } : null,
+    // Nobody is waiting on a page here, so the model gets a minute for long prompts.
+    gemini: env.GEMINI_API_KEY ? { apiKey: env.GEMINI_API_KEY, model: env.GEMINI_MODEL, timeoutMs: 60_000 } : null,
     states: createStatesLoader(fetch, env.CARTOGRAPHY_URL),
   },
-  { slugs: values.slug ?? [], force: values.force, delayMs: Number(values.delay) },
+  { slugs: values.slug ?? [], force: values.force, delayMs: Number(values.delay), retries: Number(values.retries) },
 );
 for (const { slug, outcome, detail } of outcomes) console.log(`${outcome.padEnd(6)} ${slug} (${detail})`);
 const failed = outcomes.filter((outcome) => outcome.outcome === "failed").length;

@@ -30,6 +30,13 @@ export type GenerateOptions = {
   force?: boolean;
   /** Pause between artists, to stay inside the Gemini free tier's requests per minute. */
   delayMs?: number;
+  /**
+   * Further tries for an artist whose research failed (a 503 from an
+   * overloaded Gemini, a timeout), each after a longer wait: retryDelayMs,
+   * then twice that, and so on.
+   */
+  retries?: number;
+  retryDelayMs?: number;
   sleep?: (ms: number) => Promise<void>;
   clock?: () => Date;
 };
@@ -53,7 +60,7 @@ export async function generateResearch(
   deps: ResearchDeps,
   options: GenerateOptions = {},
 ): Promise<GenerateOutcome[]> {
-  const { slugs = [], force = false, delayMs = 6000, clock = () => new Date() } = options;
+  const { slugs = [], force = false, delayMs = 6000, retries = 2, retryDelayMs = 30_000, clock = () => new Date() } = options;
   const sleep = options.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
   const read = storedResearch(db);
   const artists = data.dataset.artists.filter((artist) => slugs.length === 0 || slugs.includes(artist.slug));
@@ -66,8 +73,13 @@ export async function generateResearch(
     }
     if (outcomes.some((outcome) => outcome.outcome !== "kept")) await sleep(delayMs);
 
-    const now = clock();
-    const research = await researchArtist(artist, placesOf(artist, data), deps, now);
+    let now = clock();
+    let research = await researchArtist(artist, placesOf(artist, data), deps, now);
+    for (let attempt = 0; attempt < retries && hasFailure(research); attempt++) {
+      await sleep(retryDelayMs * 2 ** attempt);
+      now = clock();
+      research = await researchArtist(artist, placesOf(artist, data), deps, now);
+    }
     if (hasFailure(research)) {
       const failed = research.sources.find((source) => source.status === "error");
       outcomes.push({

@@ -82,9 +82,34 @@ describe("generateResearch", () => {
       summary: { status: "error", text: null, citations: [], prompt: null, model: null, detail: null },
       retrievedAt: "2026-11-01T12:00:00.000Z",
     });
-    const [outcome] = await generateResearch(db, data, deps(sources()), noWait);
+    const [outcome] = await generateResearch(db, data, deps(sources()), { ...noWait, retries: 0 });
     expect(outcome).toEqual({ slug: "a", outcome: "failed", detail: "summary: error" });
     research.mockRestore();
+  });
+
+  it("tries a failed artist again after longer and longer waits", async () => {
+    const { db, data } = await seeded("a");
+    const sleep = vi.fn(async () => {});
+    const fetcher = sources(true);
+    const [outcome] = await generateResearch(db, data, deps(fetcher), { ...noWait, sleep, retries: 2, retryDelayMs: 100 });
+    expect(outcome?.outcome).toBe("failed");
+    expect(sleep.mock.calls).toEqual([[100], [200]]);
+    expect(fetcher).toHaveBeenCalledTimes(3);
+  });
+
+  it("stores the result once a retry succeeds", async () => {
+    const { db, data } = await seeded("a");
+    let calls = 0;
+    const fetcher = vi.fn<Fetcher>(async (url) => {
+      calls += 1;
+      if (calls === 1) return { ok: false, status: 503, json: async () => ({}) };
+      if (url.includes("wbsearchentities")) return { ok: true, status: 200, json: async () => ({ search: [] }) };
+      return { ok: false, status: 404, json: async () => ({}) };
+    });
+    expect(await generateResearch(db, data, deps(fetcher), noWait)).toEqual([
+      { slug: "a", outcome: "stored", detail: "summary: no_findings" },
+    ]);
+    expect(await storedResearch(db)(artist("a"))).not.toBeNull();
   });
 
   it("waits between live calls with the real timer by default", async () => {
