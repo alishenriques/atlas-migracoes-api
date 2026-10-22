@@ -36,7 +36,8 @@ export type GenerateOptions = {
   /**
    * Further tries for an artist whose research failed (a 503 from an
    * overloaded Gemini, a timeout), each after a longer wait: retryDelayMs,
-   * then twice that, and so on.
+   * then twice that, and so on. A 429 is not tried again: the free tier's
+   * daily quota is spent, and waiting a minute does not bring it back.
    */
   retries?: number;
   retryDelayMs?: number;
@@ -50,6 +51,11 @@ export type GenerateOutcome = {
   /** The summary's status, or the failing source, so the run can be reviewed. */
   detail: string;
 };
+
+/** True when Gemini refused for quota (429); trying again the same day only spends the run's time. */
+export function quotaExhausted(research: Research): boolean {
+  return research.summary.status === "error" && (research.summary.detail ?? "").includes("429");
+}
 
 /**
  * Researches each artist live and stores the complete results. Run from the
@@ -78,7 +84,7 @@ export async function generateResearch(
 
     let now = clock();
     let research = await researchArtist(artist, placesOf(artist, data), deps, now);
-    for (let attempt = 0; attempt < retries && hasFailure(research); attempt++) {
+    for (let attempt = 0; attempt < retries && hasFailure(research) && !quotaExhausted(research); attempt++) {
       await sleep(retryDelayMs * 2 ** attempt);
       now = clock();
       research = await researchArtist(artist, placesOf(artist, data), deps, now);
