@@ -40,3 +40,5 @@ const outcomes = await generateResearch(
 for (const { slug, outcome, detail } of outcomes) console.log(`${outcome.padEnd(6)} ${slug} (${detail})`);
 const failed = outcomes.filter((outcome) => outcome.outcome === "failed").length;
 console.log(`\n${outcomes.length} artistas: ${outcomes.length - failed} ok, ${failed} com falha (rode de novo para tentar só esses).`);
+if (outcomes.some((outcome) => outcome.detail.includes("429")))
+  console.log("Gemini respondeu 429: a cota diária do plano gratuito acabou. Rode de novo amanhã, sem --force, para tentar só os que falharam.");
