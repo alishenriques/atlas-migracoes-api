@@ -99,6 +99,27 @@ describe("generateResearch", () => {
     expect(fetcher).toHaveBeenCalledTimes(3);
   });
 
+  it("does not try again when Gemini's quota is spent", async () => {
+    const { db, data } = await seeded("a");
+    const sleep = vi.fn(async () => {});
+    const research = vi.spyOn(await import("./research.js"), "researchArtist");
+    research.mockResolvedValue({
+      searchedNames: ["Artista a"],
+      match: null,
+      candidates: [],
+      findings: [],
+      sources: [{ source: "wikidata", status: "ok", detail: null }],
+      period: null,
+      summary: { status: "error", text: null, citations: [], prompt: null, model: null, detail: "Gemini answered 429" },
+      retrievedAt: "2026-11-01T12:00:00.000Z",
+    });
+    const [outcome] = await generateResearch(db, data, deps(sources()), { ...noWait, sleep, retries: 2 });
+    expect(outcome).toEqual({ slug: "a", outcome: "failed", detail: "summary: Gemini answered 429" });
+    expect(research).toHaveBeenCalledOnce();
+    expect(sleep).not.toHaveBeenCalled();
+    research.mockRestore();
+  });
+
   it("stores the result once a retry succeeds", async () => {
     const { db, data } = await seeded("a");
     let calls = 0;
