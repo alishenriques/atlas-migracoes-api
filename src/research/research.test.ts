@@ -70,6 +70,7 @@ type Routes = {
   summary?: unknown;
   /** The borders file and Gemini's answer. */
   states?: unknown;
+  stateNames?: unknown;
   gemini?: unknown;
   fail?: RegExp;
 };
@@ -77,6 +78,7 @@ type Routes = {
 function fakeFetcher(routes: Routes) {
   return vi.fn<Fetcher>(async (url) => {
     if (routes.fail?.test(url)) return { ok: false, status: 503, json: async () => ({}) };
+    if (url.endsWith("state-names.json")) return { ok: true, status: 200, json: async () => routes.stateNames };
     if (url.includes("cartography")) return { ok: true, status: 200, json: async () => routes.states };
     if (url.includes("generativelanguage")) return { ok: true, status: 200, json: async () => routes.gemini };
     const parsed = new URL(url);
@@ -333,12 +335,14 @@ describe("researchArtist", () => {
 const russianStates: States = {
   features: [
     {
-      properties: { name: "Império Russo", start: "1886-01-01", end: "1917-12-31" },
+      properties: { name: "Russia (Soviet Union)", start: "1886-01-01", end: "1917-12-31" },
       geometry: { type: "Polygon", coordinates: [[[15, 45], [40, 45], [40, 60], [15, 60], [15, 45]]] },
     },
   ],
+  names: { "Russia (Soviet Union)": [{ until: "1917-03-15", pt: "Império Russo" }, { pt: "Rússia Soviética" }] },
 };
-const russianEmpire = { type: "FeatureCollection", ...russianStates };
+const { names: russianNames, ...russianBorders } = russianStates;
+const russianEmpire = { type: "FeatureCollection", ...russianBorders };
 const answer = (text: string) => ({ candidates: [{ content: { parts: [{ text }] } }], modelVersion: "gemini-test" });
 
 describe("researchArtist with the period's map and the model", () => {
@@ -411,7 +415,7 @@ describe("research query", () => {
   });
 
   it("gives the period's map and the summary with its prompt", async () => {
-    const fetcher = fakeFetcher({ ...found, search: { search: [] }, states: russianEmpire });
+    const fetcher = fakeFetcher({ ...found, search: { search: [] }, states: russianEmpire, stateNames: russianNames });
     const { gql } = createTestApp(null, fetcher);
     const result = await gql<{ research: { period: unknown; summary: { status: string; prompt: string | null } } }>(
       `{ research(slug: "artista-demo-a") { period { day approximate birthState states } summary { status text citations prompt model detail } } }`,
