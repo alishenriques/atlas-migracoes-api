@@ -79,7 +79,7 @@ export function buildPrompt({ artist, birthPlace, deathPlace, match, findings, p
 } {
   const periodText = period
     ? [
-        `Mapa da Europa em ${period.day}${period.approximate ? " (o ano de nascimento é aproximado)" : ""}, segundo o CShapes 2.0.`,
+        `Mapa da Europa em ${period.day}${period.approximate ? " (o ano de nascimento é aproximado)" : ""}, segundo o CShapes 2.0, com o nome que cada Estado tinha nesse dia.`,
         `Estado que continha o local de nascimento nesse dia: ${period.birthState ?? "nenhum identificado"}.`,
         `Estados da Europa nesse dia: ${period.states.join(", ")}.`,
       ].join("\n")
