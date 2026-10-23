@@ -114,6 +114,22 @@ const responseSchema = z.object({
   modelVersion: z.string().optional(),
 });
 
+// A 429 names the quota it hit (per minute or per day) in its error details.
+const quotaErrorSchema = z.object({
+  error: z.object({
+    details: z.array(z.object({ violations: z.array(z.object({ quotaId: z.string() })).optional() })).optional(),
+  }),
+});
+
+async function quotaOf(response: { json: () => Promise<unknown> }): Promise<string | null> {
+  try {
+    const parsed = quotaErrorSchema.safeParse(await response.json());
+    return parsed.success ? (parsed.data.error.details?.flatMap((d) => d.violations ?? [])[0]?.quotaId ?? null) : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Asks Gemini for the summary; returns its text and the model version. */
 export async function askGemini(
   fetcher: Fetcher,
@@ -131,7 +147,10 @@ export async function askGemini(
     }),
     signal: AbortSignal.timeout(timeoutMs),
   });
-  if (!response.ok) throw new Error(`Gemini answered ${response.status}`);
+  if (!response.ok) {
+    const quota = response.status === 429 ? await quotaOf(response) : null;
+    throw new Error(`Gemini answered ${response.status}${quota ? ` (${quota})` : ""}`);
+  }
   const body = responseSchema.parse(await response.json());
   const text = (body.candidates[0]?.content?.parts ?? []).map((part) => part.text ?? "").join("").trim();
   if (!text) throw new Error("Gemini answered with no text");
