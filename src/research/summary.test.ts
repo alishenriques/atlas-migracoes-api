@@ -152,6 +152,14 @@ describe("summarize", () => {
 
   it("reports a model that fails or answers nothing", async () => {
     expect(await summarize(replying({}, false), gemini, input)).toMatchObject({ status: "error", detail: "Gemini answered 429" });
+    const quota = { error: { details: [{}, { violations: [{ quotaId: "GenerateRequestsPerDayPerProjectPerModel-FreeTier" }] }] } };
+    expect((await summarize(replying(quota, false), gemini, input)).detail).toBe(
+      "Gemini answered 429 (GenerateRequestsPerDayPerProjectPerModel-FreeTier)",
+    );
+    const unreadable = vi.fn<Fetcher>(async () => ({ ok: false, status: 429, json: async () => Promise.reject(new Error("html")) }));
+    expect((await summarize(unreadable, gemini, input)).detail).toBe("Gemini answered 429");
+    const overloaded = vi.fn<Fetcher>(async () => ({ ok: false, status: 503, json: async () => quota }));
+    expect((await summarize(overloaded, gemini, input)).detail).toBe("Gemini answered 503");
     expect((await summarize(replying({ candidates: [{}] }), gemini, input)).detail).toBe("Gemini answered with no text");
     expect((await summarize(replying({ candidates: [] }), gemini, input)).status).toBe("error");
     const thrown = vi.fn<Fetcher>(async () => {
