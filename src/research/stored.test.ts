@@ -35,6 +35,18 @@ async function seeded(...slugs: string[]) {
   return { db, data: indexDataset(await loadDataset(db)) };
 }
 
+/** A research whose only failure is the summary, with Gemini's error. */
+const geminiError = (detail: string): Research => ({
+  searchedNames: ["Artista"],
+  match: null,
+  candidates: [],
+  findings: [],
+  sources: [{ source: "wikidata", status: "ok", detail: null }],
+  period: null,
+  summary: { status: "error", text: null, citations: [], prompt: null, model: null, detail },
+  retrievedAt: "2026-11-01T12:00:00.000Z",
+});
+
 const noWait = { sleep: async () => {}, clock: () => new Date("2026-11-01T12:00:00Z") };
 
 describe("generateResearch", () => {
@@ -146,6 +158,41 @@ describe("generateResearch", () => {
     expect(outcome).toEqual({ slug: "a", outcome: "failed", detail: "summary: Gemini answered 429" });
     expect(research).toHaveBeenCalledOnce();
     expect(sleep).not.toHaveBeenCalled();
+    research.mockRestore();
+  });
+
+  it("stops asking Gemini for the rest of the run once its daily quota is spent", async () => {
+    const { db, data } = await seeded("a", "b");
+    const research = vi.spyOn(await import("./research.js"), "researchArtist");
+    research.mockResolvedValue(geminiError("Gemini answered 429 (GenerateRequestsPerDayPerProjectPerModel-FreeTier)"));
+    expect(await generateResearch(db, data, deps(sources()), noWait)).toEqual([
+      { slug: "a", outcome: "failed", detail: "summary: Gemini answered 429 (GenerateRequestsPerDayPerProjectPerModel-FreeTier)" },
+      { slug: "b", outcome: "skipped", detail: "Gemini's daily quota is spent" },
+    ]);
+    expect(research).toHaveBeenCalledOnce();
+    research.mockRestore();
+  });
+
+  it("waits out a per-minute 429 and tries again", async () => {
+    const { db, data } = await seeded("a");
+    const research = vi.spyOn(await import("./research.js"), "researchArtist");
+    research.mockResolvedValue(geminiError("Gemini answered 429 (GenerateRequestsPerMinutePerProjectPerModel-FreeTier)"));
+    const [outcome] = await generateResearch(db, data, deps(sources()), { ...noWait, retries: 1 });
+    expect(outcome?.outcome).toBe("failed");
+    expect(research).toHaveBeenCalledTimes(2);
+    research.mockRestore();
+  });
+
+  it("makes at most `limit` Gemini calls, retries included, and skips the rest", async () => {
+    const { db, data } = await seeded("a", "b", "c");
+    const research = vi.spyOn(await import("./research.js"), "researchArtist");
+    research.mockResolvedValue(geminiError("Gemini answered 503"));
+    expect(await generateResearch(db, data, deps(sources()), { ...noWait, retries: 2, limit: 2 })).toEqual([
+      { slug: "a", outcome: "failed", detail: "summary: Gemini answered 503" },
+      { slug: "b", outcome: "skipped", detail: "limit of 2 Gemini calls reached" },
+      { slug: "c", outcome: "skipped", detail: "limit of 2 Gemini calls reached" },
+    ]);
+    expect(research).toHaveBeenCalledTimes(2);
     research.mockRestore();
   });
 
