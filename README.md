@@ -38,7 +38,8 @@ Sem `DATABASE_URL`, a API responde em **modo demonstração**: poucos registros 
 | `PORT` | Porta local (padrão 4000) |
 | `CORS_ORIGIN` | Origem permitida, ou lista separada por vírgula (padrão `http://localhost:3000`) |
 | `GEMINI_API_KEY` | Chave da API Gemini (plano gratuito), marcada como Sensitive na Vercel. Sem ela, a IA Relacional mostra os achados e o prompt, mas não o resumo |
-| `GEMINI_MODEL` | Modelo do resumo (padrão `gemini-flash-latest`, o Flash gratuito atual) |
+| `GEMINI_LIVE` | `true` para a API pedir o resumo ao Gemini ao vivo quando o artista não tem pesquisa gravada. Padrão `false`: a cota grátis é por projeto do Google, e cada visita gastaria a cota da geração; os resumos gravados aparecem do mesmo jeito |
+| `GEMINI_MODEL` | Modelo do resumo (padrão `gemini-flash-latest`, o Flash gratuito atual). Para a geração, `gemini-flash-lite-latest` tem cota diária maior no plano grátis |
 | `CARTOGRAPHY_URL` | Fronteiras da Europa por período publicadas pelo app (padrão `https://atlas-migracoes.vercel.app/cartography/europe-states.geojson`); os nomes dos Estados por período são lidos do `state-names.json` na mesma pasta |
 
 ## Importando as planilhas
@@ -129,7 +130,7 @@ Tudo é leitura no MVP; a edição por pesquisadores vem numa etapa seguinte do 
 
 ### Pesquisas geradas antes (para o evento)
 
-Para o público não depender da cota grátis do Gemini, a pesquisa de cada artista é gerada antes e gravada na tabela `research_results`. A API lê dali primeiro e só pesquisa ao vivo os artistas que ainda não têm resultado. Na sua máquina, com a `DATABASE_URL` do usuário dono do banco e a `GEMINI_API_KEY` no `.env`:
+Para o público não depender da cota grátis do Gemini, a pesquisa de cada artista é gerada antes e gravada na tabela `research_results`. A API lê dali primeiro e só pesquisa ao vivo os artistas que ainda não têm resultado, sem resumo do Gemini a menos que `GEMINI_LIVE=true`. Na sua máquina, com a `DATABASE_URL` do usuário dono do banco e a `GEMINI_API_KEY` no `.env`:
 
 ```bash
 yarn db:migrate                          # cria a tabela research_results (uma vez)
