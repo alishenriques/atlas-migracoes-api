@@ -39,6 +39,11 @@ export type GenerateOptions = {
    * Repeating the run after a 429 picks up where it stopped.
    */
   stalePeriod?: boolean;
+  /**
+   * Most calls to Gemini in this run, retries included; the artists left are
+   * reported as skipped. Unlimited when absent.
+   */
+  limit?: number;
   /** Pause between artists, to stay inside the Gemini free tier's requests per minute. */
   delayMs?: number;
   /**
@@ -55,15 +60,22 @@ export type GenerateOptions = {
 
 export type GenerateOutcome = {
   slug: string;
-  outcome: "stored" | "kept" | "failed";
+  outcome: "stored" | "kept" | "failed" | "skipped";
   /** The summary's status, or the failing source, so the run can be reviewed. */
   detail: string;
 };
 
-/** True when Gemini refused for quota (429); trying again the same day only spends the run's time. */
+/**
+ * True when Gemini refused for its daily quota (429); trying again the same day
+ * only spends requests. A 429 for the per-minute quota is not: it passes after a wait.
+ */
 export function quotaExhausted(research: Research): boolean {
-  return research.summary.status === "error" && (research.summary.detail ?? "").includes("429");
+  const detail = research.summary.detail ?? "";
+  return research.summary.status === "error" && detail.includes("429") && !detail.includes("PerMinute");
 }
+
+/** Whether this research asked Gemini (any answer, or an error from it). */
+const askedGemini = (research: Research) => ["ok", "rejected", "error"].includes(research.summary.status);
 
 /**
  * Researches each artist live and stores the complete results. Run from the
@@ -77,7 +89,7 @@ export async function generateResearch(
   deps: ResearchDeps,
   options: GenerateOptions = {},
 ): Promise<GenerateOutcome[]> {
-  const { slugs = [], force = false, stalePeriod = false, delayMs = 6000, retries = 2, retryDelayMs = 30_000, clock = () => new Date() } = options;
+  const { slugs = [], force = false, stalePeriod = false, limit = Infinity, delayMs = 6000, retries = 2, retryDelayMs = 30_000, clock = () => new Date() } = options;
   const sleep = options.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
   const read = storedResearch(db);
   const artists = data.dataset.artists.filter((artist) => slugs.length === 0 || slugs.includes(artist.slug));
@@ -85,7 +97,15 @@ export async function generateResearch(
   const states = stalePeriod ? await deps.states() : null;
   if (stalePeriod && !states) throw new Error("the period's map could not be loaded, so stale results cannot be told apart");
 
+  let calls = 0;
+  let stop: string | null = null;
+
   for (const artist of artists) {
+    if (stop === null && calls >= limit) stop = `limit of ${limit} Gemini calls reached`;
+    if (stop !== null) {
+      outcomes.push({ slug: artist.slug, outcome: "skipped", detail: stop });
+      continue;
+    }
     const stored = force ? null : await read(artist);
     const stale =
       stored !== null &&
@@ -99,11 +119,15 @@ export async function generateResearch(
 
     let now = clock();
     let research = await researchArtist(artist, placesOf(artist, data), deps, now);
-    for (let attempt = 0; attempt < retries && hasFailure(research) && !quotaExhausted(research); attempt++) {
+    if (askedGemini(research)) calls++;
+    for (let attempt = 0; attempt < retries && hasFailure(research) && !quotaExhausted(research) && calls < limit; attempt++) {
       await sleep(retryDelayMs * 2 ** attempt);
       now = clock();
       research = await researchArtist(artist, placesOf(artist, data), deps, now);
+      if (askedGemini(research)) calls++;
     }
+    // With the daily quota spent, every further call is one more refused request.
+    if (quotaExhausted(research)) stop = "Gemini's daily quota is spent";
     if (hasFailure(research)) {
       const failed = research.sources.find((source) => source.status === "error");
       outcomes.push({
