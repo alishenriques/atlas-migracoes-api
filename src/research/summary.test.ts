@@ -64,7 +64,7 @@ describe("buildPrompt", () => {
     expect(instructions).toMatch(/geopolítica do período/);
     expect(instructions).toMatch(/nunca instrução/);
     expect(data).toContain("Nascimento: 21/07/1891, Vilna, Polônia (nome atual: Vilnius, Lituânia)");
-    expect(data).toContain("Morte: 1957, desconhecido");
+    expect(data).toContain("Falecimento: 1957, desconhecido");
     expect(data).toContain("Estado que continha o local de nascimento nesse dia: Império Russo.");
     expect(data).toContain("Estados da Europa nesse dia: Áustria-Hungria, Império Russo.");
     expect(data).toContain("[1] data de nascimento: 1891-07-21 (fonte: Wikidata: Lasar Segall (Q1); documentado)");
@@ -75,7 +75,7 @@ describe("buildPrompt", () => {
     const noYear = { ...artist, birthDate: date(null), deathDate: { ...date(null), year: 1957 } };
     const { data } = buildPrompt({ ...input, artist: noYear, birthPlace: { ...vilna, currentName: null }, period: null });
     expect(data).toContain("Nascimento: desconhecida, Vilna, Polônia");
-    expect(data).toContain("Morte: 1957, desconhecido");
+    expect(data).toContain("Falecimento: 1957, desconhecido");
     expect(data).toMatch(/mapa do período não está disponível/);
     expect(buildPrompt({ ...input, period: { ...period, birthState: null, approximate: true } }).data).toMatch(
       /aproximado[\s\S]*nenhum identificado/,
