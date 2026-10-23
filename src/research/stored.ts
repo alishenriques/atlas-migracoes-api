@@ -1,9 +1,11 @@
+import { isDeepStrictEqual } from "node:util";
 import { eq } from "drizzle-orm";
 import type { Database } from "../db/client.js";
 import type { DatasetIndex } from "../db/dataset.js";
 import { researchResults } from "../db/schema.js";
 import type { Artist } from "../schemas/domain.js";
 import { hasFailure, researchArtist, type ArtistPlaces, type Research, type ResearchDeps } from "./research.js";
+import { periodContext } from "./territories.js";
 
 /** Reads an artist's stored research; null when there is none. */
 export type StoredResearch = (artist: Artist) => Promise<Research | null>;
@@ -31,6 +33,12 @@ export type GenerateOptions = {
   slugs?: string[];
   /** Ask again for artists that already have a stored result. */
   force?: boolean;
+  /**
+   * Ask again only for stored results whose period's map is no longer the one
+   * the borders and state names give today (and for artists with no result).
+   * Repeating the run after a 429 picks up where it stopped.
+   */
+  stalePeriod?: boolean;
   /** Pause between artists, to stay inside the Gemini free tier's requests per minute. */
   delayMs?: number;
   /**
@@ -69,15 +77,22 @@ export async function generateResearch(
   deps: ResearchDeps,
   options: GenerateOptions = {},
 ): Promise<GenerateOutcome[]> {
-  const { slugs = [], force = false, delayMs = 6000, retries = 2, retryDelayMs = 30_000, clock = () => new Date() } = options;
+  const { slugs = [], force = false, stalePeriod = false, delayMs = 6000, retries = 2, retryDelayMs = 30_000, clock = () => new Date() } = options;
   const sleep = options.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
   const read = storedResearch(db);
   const artists = data.dataset.artists.filter((artist) => slugs.length === 0 || slugs.includes(artist.slug));
   const outcomes: GenerateOutcome[] = [];
+  const states = stalePeriod ? await deps.states() : null;
+  if (stalePeriod && !states) throw new Error("the period's map could not be loaded, so stale results cannot be told apart");
 
   for (const artist of artists) {
-    if (!force && (await read(artist))) {
-      outcomes.push({ slug: artist.slug, outcome: "kept", detail: "already stored" });
+    const stored = force ? null : await read(artist);
+    const stale =
+      stored !== null &&
+      states !== null &&
+      !isDeepStrictEqual(stored.period ?? null, periodContext(states, artist, placesOf(artist, data).birth));
+    if (stored && !stale) {
+      outcomes.push({ slug: artist.slug, outcome: "kept", detail: stalePeriod ? "period unchanged" : "already stored" });
       continue;
     }
     if (outcomes.some((outcome) => outcome.outcome !== "kept")) await sleep(delayMs);

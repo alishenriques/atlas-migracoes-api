@@ -5,6 +5,7 @@ import type { Artist, FuzzyDate } from "../schemas/domain.js";
 import { createTestApp, createTestDatabase } from "../test/helpers.js";
 import { createResearchCache, type Research, type ResearchDeps } from "./research.js";
 import { generateResearch, storedResearch } from "./stored.js";
+import type { States } from "./territories.js";
 import type { Fetcher } from "./wikimedia.js";
 
 const unknownDate: FuzzyDate = { raw: null, year: null, endYear: null, iso: null, precision: "unknown" };
@@ -61,6 +62,34 @@ describe("generateResearch", () => {
     const outcomes = await generateResearch(db, data, deps(sources()), { ...noWait, force: true, slugs: ["b"] });
     expect(outcomes).toEqual([{ slug: "b", outcome: "stored", detail: "summary: no_findings" }]);
     expect(await db.select().from(researchResults)).toHaveLength(2);
+  });
+
+  it("asks again only for results whose period's map changed, when asked to", async () => {
+    const { db } = await seeded("a");
+    const born1891: FuzzyDate = { raw: "1891", year: 1891, endYear: 1891, iso: null, precision: "year" };
+    await db.insert(artists).values({ ...artist("b"), birthDate: born1891 });
+    const data = indexDataset(await loadDataset(db));
+    const russia = { name: "Russia (Soviet Union)", start: "1886-01-01", end: "1917-12-31" };
+    const borders = [{ properties: russia, geometry: { type: "Polygon" as const, coordinates: [] } }];
+    const withNames = (names: States["names"]): ResearchDeps => ({
+      ...deps(sources()),
+      states: async () => ({ features: borders, names }),
+    });
+    await generateResearch(db, data, withNames({}), noWait);
+    expect((await storedResearch(db)(artist("b")))?.period?.states).toEqual(["Russia (Soviet Union)"]);
+
+    const renamed = withNames({
+      "Russia (Soviet Union)": [{ until: "1917-03-15", pt: "Império Russo" }, { pt: "Rússia Soviética" }],
+    });
+    const stale = { ...noWait, stalePeriod: true };
+    expect(await generateResearch(db, data, renamed, stale)).toEqual([
+      { slug: "a", outcome: "kept", detail: "period unchanged" },
+      { slug: "b", outcome: "stored", detail: "summary: no_findings" },
+    ]);
+    expect((await storedResearch(db)(artist("b")))?.period?.states).toEqual(["Império Russo"]);
+    expect((await generateResearch(db, data, renamed, stale)).map((o) => o.outcome)).toEqual(["kept", "kept"]);
+
+    await expect(generateResearch(db, data, deps(sources()), stale)).rejects.toThrow("period's map");
   });
 
   it("reports an incomplete result and does not store it", async () => {
