@@ -3,8 +3,10 @@ import type { Artist, Place } from "../schemas/domain.js";
 import { USER_AGENT, type Fetcher } from "./wikimedia.js";
 
 // The app publishes Europe's state borders by period (CShapes 2.0, see the app's
-// public/cartography/README.md). The IA Relacional reads the same file, so the
-// model is told the states of the artist's time and never infers them.
+// public/cartography/README.md) and, beside them, the name each state had on
+// each day (state-names.json): CShapes gives a state one English name for its
+// whole existence. The IA Relacional reads the same files, so the model is told
+// the states of the artist's time, by their names then, and never infers them.
 
 /** Days CShapes covers. */
 export const COVERAGE = { start: "1886-01-01", end: "2019-12-31" } as const;
@@ -15,7 +17,7 @@ type Ring = Position[];
 const ringSchema = z.array(z.tuple([z.number(), z.number()]));
 const isoDay = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
-const statesSchema = z.object({
+const bordersSchema = z.object({
   features: z.array(
     z.object({
       properties: z.object({ name: z.string(), start: isoDay, end: isoDay }),
@@ -27,13 +29,50 @@ const statesSchema = z.object({
   ),
 });
 
-export type States = z.infer<typeof statesSchema>;
+/**
+ * Per CShapes name, the state's names in order, each valid through `until`
+ * (inclusive) and the last one open-ended. Only the Portuguese one goes to the model.
+ */
+const namesSchema = z.record(
+  z.string(),
+  z
+    .array(z.object({ until: isoDay.optional(), pt: z.string().min(1) }))
+    .min(1)
+    .refine(
+      (periods) =>
+        periods.every(({ until }, index) => {
+          const next = periods[index + 1];
+          if (!next) return until === undefined;
+          return until !== undefined && (next.until === undefined || until < next.until);
+        }),
+      "periods must be in order, every one but the last with an `until`",
+    ),
+);
 
-/** Downloads and validates the borders file. */
-export async function loadStates(fetcher: Fetcher, url: string): Promise<States> {
-  const response = await fetcher(url, { headers: { "User-Agent": USER_AGENT, Accept: "application/geo+json" } });
+/** The borders and the names of the states by period. */
+export type States = z.infer<typeof bordersSchema> & { names: z.infer<typeof namesSchema> };
+
+/** The names file, published beside the borders file. */
+export const namesUrl = (bordersUrl: string) => new URL("state-names.json", bordersUrl).toString();
+
+async function getJson(fetcher: Fetcher, url: string, accept: string): Promise<unknown> {
+  const response = await fetcher(url, { headers: { "User-Agent": USER_AGENT, Accept: accept } });
   if (!response.ok) throw new Error(`${new URL(url).host} answered ${response.status}`);
-  return statesSchema.parse(await response.json());
+  return response.json();
+}
+
+/** Downloads and validates the borders file and the names beside it. */
+export async function loadStates(fetcher: Fetcher, url: string): Promise<States> {
+  const [borders, names] = await Promise.all([
+    getJson(fetcher, url, "application/geo+json"),
+    getJson(fetcher, namesUrl(url), "application/json"),
+  ]);
+  return { ...bordersSchema.parse(borders), names: namesSchema.parse(names) };
+}
+
+/** The state's name on a day, or the source's name when the table does not know the state. */
+export function periodName(states: States, source: string, day: string): string {
+  return states.names[source]?.find(({ until }) => until === undefined || day <= until)?.pt ?? source;
 }
 
 /** Even-odd ray casting: whether the point is inside the ring. */
@@ -54,21 +93,20 @@ const inPolygon = (point: Position, [outer, ...holes]: Ring[]) =>
 const inForce = (states: States, day: string) =>
   states.features.filter(({ properties }) => properties.start <= day && day <= properties.end);
 
-/** Names of the states in force on a day, alphabetical. */
+/** Names of the states in force on a day, as they were called that day, alphabetical. */
 export function statesOn(states: States, day: string): string[] {
-  return [...new Set(inForce(states, day).map((feature) => feature.properties.name))].sort((a, b) =>
-    a.localeCompare(b, "pt"),
-  );
+  const names = inForce(states, day).map((feature) => periodName(states, feature.properties.name, day));
+  return [...new Set(names)].sort((a, b) => a.localeCompare(b, "pt"));
 }
 
-/** The state that held a point on a day, or null (sea, no state's territory, or outside the map). */
+/** The state that held a point on a day, by its name that day, or null (sea, no state's territory, or outside the map). */
 export function stateAt(states: States, day: string, lng: number, lat: number): string | null {
   const feature = inForce(states, day).find(({ geometry }) =>
     geometry.type === "Polygon"
       ? inPolygon([lng, lat], geometry.coordinates)
       : geometry.coordinates.some((polygon) => inPolygon([lng, lat], polygon)),
   );
-  return feature?.properties.name ?? null;
+  return feature ? periodName(states, feature.properties.name, day) : null;
 }
 
 /** The map of the artist's birth: the states of Europe then, and the one that held the birthplace. */
@@ -96,7 +134,7 @@ export function periodContext(states: States, artist: Artist, birthPlace: Place 
 }
 
 /**
- * Loads the borders once per instance and keeps them; a failed load is not
+ * Loads the borders and names once per instance and keeps them; a failed load is not
  * kept, so the next research tries again. Resolves to null on failure, since the
  * research goes on without the period's map.
  */
