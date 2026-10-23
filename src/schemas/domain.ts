@@ -17,6 +17,16 @@ export const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   /** Gemini API key (free tier). Without it the IA Relacional shows findings but no summary. */
   GEMINI_API_KEY: z.string().min(1).optional(),
+  /**
+   * Whether the API asks Gemini live for an artist with no stored research.
+   * Off by default: the free tier's quota is per Google project, and visits
+   * would spend what `yarn research:generate` needs. Stored summaries are
+   * served either way.
+   */
+  GEMINI_LIVE: z
+    .enum(["true", "false"])
+    .default("false")
+    .transform((value) => value === "true"),
   /** Gemini model; the "latest" alias follows Google's current free Flash model. */
   GEMINI_MODEL: z.string().min(1).default("gemini-flash-latest"),
   /** The period's state borders (CShapes 2.0), published by the app; read to give the AI the period's map. */

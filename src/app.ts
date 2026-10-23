@@ -20,7 +20,7 @@ export function createApp(env: Env = loadEnv(), deps: AppDependencies = {}) {
   const fetcher = deps.fetcher ?? fetch;
   const research = createResearchCache({
     fetcher,
-    gemini: env.GEMINI_API_KEY ? { apiKey: env.GEMINI_API_KEY, model: env.GEMINI_MODEL } : null,
+    gemini: env.GEMINI_API_KEY && env.GEMINI_LIVE ? { apiKey: env.GEMINI_API_KEY, model: env.GEMINI_MODEL } : null,
     states: createStatesLoader(fetcher, env.CARTOGRAPHY_URL),
     stored: db ? storedResearch(db) : undefined,
   });

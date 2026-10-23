@@ -430,16 +430,20 @@ describe("research query", () => {
     expect(fetcher.mock.calls.some(([url]) => url === testEnv.CARTOGRAPHY_URL)).toBe(true);
   });
 
-  it("asks Gemini only when a key is configured", async () => {
+  it("asks Gemini live only with a key and GEMINI_LIVE=true", async () => {
     const fetcher = fakeFetcher({ ...found, entities: { ...found.entities, Q1340566: { ...segall, claims: { ...segall.claims, P569: [claim(time("1905-01-01", 9))] } } }, gemini: answer("Pintor [1].") });
-    const app = createApp(loadEnv({ NODE_ENV: "test", GEMINI_API_KEY: "k" }), { db: null, fetcher });
-    const response = await app.fetch("http://localhost/graphql", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ query: `{ research(slug: "artista-demo-a") { summary { status text } } }` }),
-    });
-    const body = (await response.json()) as { data: { research: { summary: unknown } } };
-    expect(body.data.research.summary).toEqual({ status: "ok", text: "Pintor [1]." });
+    const summaryWith = async (env: Record<string, string>) => {
+      const app = createApp(loadEnv({ NODE_ENV: "test", ...env }), { db: null, fetcher });
+      const response = await app.fetch("http://localhost/graphql", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ query: `{ research(slug: "artista-demo-a") { summary { status text } } }` }),
+      });
+      return ((await response.json()) as { data: { research: { summary: unknown } } }).data.research.summary;
+    };
+    expect(await summaryWith({ GEMINI_API_KEY: "k" })).toEqual({ status: "not_configured", text: null });
+    expect(fetcher.mock.calls.some(([url]) => url.includes("generativelanguage"))).toBe(false);
+    expect(await summaryWith({ GEMINI_API_KEY: "k", GEMINI_LIVE: "true" })).toEqual({ status: "ok", text: "Pintor [1]." });
   });
 
   it("returns null for an unknown artist", async () => {
