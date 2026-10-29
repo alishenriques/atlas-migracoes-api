@@ -169,6 +169,8 @@ export const typeDefs = /* GraphQL */ `
     birth_year
     "The only person with exactly this name (the collection has no birth year)."
     name
+    "A researcher confirmed this item in the reviewed list of links; no search was made."
+    reviewed
   }
 
   type ResearchMatch {
@@ -178,6 +180,8 @@ export const typeDefs = /* GraphQL */ `
     description: String
     url: String!
     basis: MatchBasis!
+    "The researcher's note on a reviewed link; null otherwise."
+    note: String
   }
 
   "Why a person Wikidata returned was not taken to be the artist."
