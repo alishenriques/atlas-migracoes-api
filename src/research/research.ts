@@ -67,9 +67,23 @@ export type Match = {
   label: string;
   description: string | null;
   url: string;
-  /** `birth_year`: the only person found born in the collection's birth year; `name`: the only person with exactly that name (used when the collection has no birth year). */
-  basis: "birth_year" | "name";
+  /**
+   * `birth_year`: the only person found born in the collection's birth year;
+   * `name`: the only person with exactly that name (used when the collection
+   * has no birth year); `reviewed`: a researcher confirmed this item in the
+   * reviewed list of links (see links.ts), and no search was made.
+   */
+  basis: "birth_year" | "name" | "reviewed";
+  /** The researcher's note on a reviewed link; null otherwise. */
+  note: string | null;
 };
+
+/**
+ * A researcher's decision on which Wikidata item is the artist, from the
+ * reviewed list of links: the confirmed item is used without searching, and
+ * rejected items are never matched nor offered as candidates.
+ */
+export type WikidataLink = { confirmed: string | null; rejected: string[]; note: string | null };
 
 /**
  * Why a person Wikidata returned was not taken to be the artist:
@@ -117,6 +131,8 @@ export type ResearchDeps = {
   gemini: GeminiConfig | null;
   /** The period's borders; null when they could not be loaded. */
   states: () => Promise<States | null>;
+  /** The reviewed link for an artist, when there is one (generation only; the API itself does not read the list). */
+  links?: (artist: Artist) => WikidataLink | null;
 };
 
 const HUMAN = "Q5";
@@ -234,20 +250,29 @@ const message = (error: unknown) => (error instanceof Error ? error.message : St
 async function lookUp(
   artist: Artist,
   fetcher: Fetcher,
+  link: WikidataLink | null,
 ): Promise<Pick<Research, "searchedNames" | "match" | "candidates" | "findings" | "sources">> {
-  const searchedNames = searchNames(artist.name);
+  // A confirmed link replaces the search, so no name is searched.
+  const searchedNames = link?.confirmed ? [] : searchNames(artist.name);
   const none = { searchedNames, match: null, candidates: [], findings: [] };
   let match: { entity: Entity; basis: Match["basis"] } | null;
   let candidates: Candidate[] = [];
   try {
-    // Each id remembers the first name that found it; only the collection's own name can give a match.
-    const foundBy = new Map<string, string>();
-    for (const name of searchedNames) {
-      for (const id of await searchItems(fetcher, name)) if (!foundBy.has(id)) foundBy.set(id, name);
+    if (link?.confirmed) {
+      const [entity] = await getEntities(fetcher, [link.confirmed]);
+      if (!entity) throw new Error(`reviewed item ${link.confirmed} not found`);
+      match = { entity, basis: "reviewed" };
+    } else {
+      // Each id remembers the first name that found it; only the collection's own name can give a match.
+      const rejected = new Set(link?.rejected ?? []);
+      const foundBy = new Map<string, string>();
+      for (const name of searchedNames) {
+        for (const id of await searchItems(fetcher, name)) if (!foundBy.has(id) && !rejected.has(id)) foundBy.set(id, name);
+      }
+      const entities = foundBy.size ? await getEntities(fetcher, [...foundBy.keys()]) : [];
+      match = pickMatch(artist, entities.filter((entity) => foundBy.get(entity.id) === artist.name));
+      if (!match) candidates = candidatesOf(artist, entities, foundBy);
     }
-    const entities = foundBy.size ? await getEntities(fetcher, [...foundBy.keys()]) : [];
-    match = pickMatch(artist, entities.filter((entity) => foundBy.get(entity.id) === artist.name));
-    if (!match) candidates = candidatesOf(artist, entities, foundBy);
   } catch (error) {
     return { ...none, sources: [{ source: "wikidata", status: "error", detail: message(error) }] };
   }
@@ -301,7 +326,14 @@ async function lookUp(
 
   return {
     searchedNames,
-    match: { id: entity.id, label: labelOf(entity), description: descriptionOf(entity), url: entityUrl(entity.id), basis },
+    match: {
+      id: entity.id,
+      label: labelOf(entity),
+      description: descriptionOf(entity),
+      url: entityUrl(entity.id),
+      basis,
+      note: basis === "reviewed" ? (link?.note ?? null) : null,
+    },
     candidates: [],
     findings,
     sources,
@@ -319,7 +351,7 @@ export async function researchArtist(
   deps: ResearchDeps,
   now = new Date(),
 ): Promise<Research> {
-  const [found, states] = await Promise.all([lookUp(artist, deps.fetcher), deps.states()]);
+  const [found, states] = await Promise.all([lookUp(artist, deps.fetcher, deps.links?.(artist) ?? null), deps.states()]);
   const period = states ? periodContext(states, artist, places.birth) : null;
   const summary = await summarize(deps.fetcher, deps.gemini, {
     artist,
