@@ -4,7 +4,7 @@ import type { Database } from "../db/client.js";
 import type { DatasetIndex } from "../db/dataset.js";
 import { researchResults } from "../db/schema.js";
 import type { Artist } from "../schemas/domain.js";
-import { hasFailure, researchArtist, type ArtistPlaces, type Research, type ResearchDeps } from "./research.js";
+import { hasFailure, researchArtist, type ArtistPlaces, type Research, type ResearchDeps, type WikidataLink } from "./research.js";
 import { periodContext } from "./territories.js";
 
 /** Reads an artist's stored research; null when there is none. */
@@ -17,10 +17,17 @@ export function storedResearch(db: Database): StoredResearch {
       .from(researchResults)
       .where(eq(researchResults.artistId, artist.id));
     if (!row) return null;
-    // Results stored before searched names and candidates were recorded lack them.
-    const { searchedNames = [], candidates = [] }: Partial<Research> = row.research;
-    return { ...row.research, searchedNames, candidates };
+    // Results stored before searched names, candidates and link notes were recorded lack them.
+    const { searchedNames = [], candidates = [], match = null }: Partial<Research> = row.research;
+    return { ...row.research, searchedNames, candidates, match: match && { ...match, note: match.note ?? null } };
   };
+}
+
+/** True when a stored research does not yet follow the artist's reviewed link. */
+export function linkOutdated(research: Research, link: WikidataLink): boolean {
+  const { match, candidates } = research;
+  if (link.confirmed) return match?.id !== link.confirmed || match.basis !== "reviewed" || match.note !== link.note;
+  return link.rejected.some((id) => match?.id === id || candidates.some((candidate) => candidate.id === id));
 }
 
 export function placesOf(artist: Artist, data: DatasetIndex): ArtistPlaces {
@@ -111,7 +118,10 @@ export async function generateResearch(
       stored !== null &&
       states !== null &&
       !isDeepStrictEqual(stored.period ?? null, periodContext(states, artist, placesOf(artist, data).birth));
-    if (stored && !stale) {
+    // A reviewed link that the stored result does not follow yet is redone in any run.
+    const link = deps.links?.(artist) ?? null;
+    const relink = stored !== null && link !== null && linkOutdated(stored, link);
+    if (stored && !stale && !relink) {
       outcomes.push({ slug: artist.slug, outcome: "kept", detail: stalePeriod ? "period unchanged" : "already stored" });
       continue;
     }

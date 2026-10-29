@@ -4,7 +4,7 @@ import { artists, researchResults } from "../db/schema.js";
 import type { Artist, FuzzyDate } from "../schemas/domain.js";
 import { createTestApp, createTestDatabase } from "../test/helpers.js";
 import { createResearchCache, type Research, type ResearchDeps } from "./research.js";
-import { generateResearch, storedResearch } from "./stored.js";
+import { generateResearch, linkOutdated, storedResearch } from "./stored.js";
 import type { States } from "./territories.js";
 import type { Fetcher } from "./wikimedia.js";
 
@@ -258,6 +258,42 @@ describe("research with stored results", () => {
     expect(await storedResearch(db)(artist("a"))).toMatchObject({ searchedNames, candidates });
   });
 
+  it("reads a match stored before link notes were recorded", async () => {
+    const { db } = await seeded("a");
+    const match = { id: "Q1", label: "A", description: null, url: "https://www.wikidata.org/wiki/Q1", basis: "name" };
+    await db.insert(researchResults).values({ artistId: "id-a", research: research({ match } as Partial<Research>), generatedAt: new Date() });
+    expect((await storedResearch(db)(artist("a")))?.match).toEqual({ ...match, note: null });
+  });
+
+  it("tells when a stored result does not follow the reviewed link yet", () => {
+    const match = { id: "Q1", label: "A", description: null, url: "https://www.wikidata.org/wiki/Q1", basis: "reviewed" as const, note: "ok" };
+    const candidate = { id: "Q2", label: "B", description: null, url: "https://www.wikidata.org/wiki/Q2", birthYear: null, foundBy: "A", reason: "no_birth_year" as const };
+    const confirmed = { confirmed: "Q1", rejected: [], note: "ok" };
+    expect(linkOutdated(research({ match }), confirmed)).toBe(false);
+    expect(linkOutdated(research(), confirmed)).toBe(true);
+    expect(linkOutdated(research({ match: { ...match, basis: "name" } }), confirmed)).toBe(true);
+    expect(linkOutdated(research({ match: { ...match, note: "antes" } }), confirmed)).toBe(true);
+    const rejected = { confirmed: null, rejected: ["Q2"], note: null };
+    expect(linkOutdated(research({ candidates: [candidate] }), rejected)).toBe(true);
+    expect(linkOutdated(research({ match: { ...match, id: "Q2" } }), rejected)).toBe(true);
+    expect(linkOutdated(research(), rejected)).toBe(false);
+  });
+
+  it("redoes only the stored results that do not follow their reviewed link, even without --force", async () => {
+    const { db, data } = await seeded("a", "b");
+    await generateResearch(db, data, deps(sources()), noWait);
+    const link = { confirmed: null, rejected: ["Q9"], note: null };
+    const linked = { ...deps(sources()), links: (a: Artist) => (a.slug === "a" ? link : null) };
+    expect((await generateResearch(db, data, linked, noWait)).map((o) => o.outcome)).toEqual(["kept", "kept"]);
+    const confirm = { confirmed: "Q9", rejected: [], note: null };
+    const relinked = { ...deps(sources()), links: (a: Artist) => (a.slug === "a" ? confirm : null) };
+    const outcomes = await generateResearch(db, data, relinked, noWait);
+    expect(outcomes.map((o) => [o.slug, o.outcome])).toEqual([
+      ["a", "failed"],
+      ["b", "kept"],
+    ]);
+  });
+
   it("serves the stored result through the research query", async () => {
     const { db } = await seeded("a");
     await db
@@ -266,5 +302,14 @@ describe("research with stored results", () => {
     const { gql } = createTestApp(db);
     const result = await gql<{ research: { retrievedAt: string } }>(`{ research(slug: "a") { retrievedAt } }`);
     expect(result.data?.research.retrievedAt).toBe("2026-11-02T00:00:00.000Z");
+  });
+
+  it("serves a reviewed match with its note", async () => {
+    const { db } = await seeded("a");
+    const match = { id: "Q1", label: "A", description: null, url: "https://www.wikidata.org/wiki/Q1", basis: "reviewed" as const, note: "Conferido." };
+    await db.insert(researchResults).values({ artistId: "id-a", research: research({ match }), generatedAt: new Date() });
+    const { gql } = createTestApp(db);
+    const result = await gql<{ research: { match: { basis: string; note: string } } }>(`{ research(slug: "a") { match { basis note } } }`);
+    expect(result.data?.research.match).toEqual({ basis: "reviewed", note: "Conferido." });
   });
 });
