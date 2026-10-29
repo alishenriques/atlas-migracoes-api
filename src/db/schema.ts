@@ -121,3 +121,21 @@ export const researchResults = pgTable("research_results", {
   research: jsonb("research").$type<Research>().notNull(),
   generatedAt: timestamp("generated_at", { withTimezone: true }).notNull(),
 });
+
+/**
+ * Artists' photos (`yarn photos:import`), kept in the base rather than in this
+ * public repository. `data` is the file in base64; `hash` changes with it, so
+ * the photo's URL can be cached for good.
+ */
+export const artistPhotos = pgTable("artist_photos", {
+  artistId: text("artist_id")
+    .primaryKey()
+    .references(() => artists.id, { onDelete: "cascade" }),
+  mime: text("mime").notNull(),
+  data: text("data").notNull(),
+  hash: text("hash").notNull(),
+  /** Who holds the photo or where it was published; null while unknown, never guessed. */
+  credit: text("credit"),
+  sourceUrl: text("source_url"),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});

@@ -28,7 +28,7 @@ Sem `DATABASE_URL`, a API responde em **modo demonstração**: poucos registros 
 
 ## Scripts
 
-`yarn dev` · `yarn lint` · `yarn typecheck` · `yarn test` · `yarn test:coverage` · `yarn db:generate` · `yarn db:migrate` · `yarn import:xlsx` · `yarn geocode` · `yarn research:generate`
+`yarn dev` · `yarn lint` · `yarn typecheck` · `yarn test` · `yarn test:coverage` · `yarn db:generate` · `yarn db:migrate` · `yarn import:xlsx` · `yarn geocode` · `yarn research:generate` · `yarn photos:import`
 
 ## Variáveis de ambiente
 
@@ -141,6 +141,17 @@ yarn research:generate --limit 15        # no máximo 15 chamadas ao Gemini nest
 ```
 
 Cada linha da saída diz `stored`, `kept` (já estava gravado) ou `failed` (uma fonte ou o Gemini falhou; nada é gravado, e é só rodar de novo: só os que falharam são refeitos). Um artista que falha (um 503 do Gemini sobrecarregado, um timeout) é tentado mais 2 vezes, depois de 30 s e de 60 s (`--retries <n>`). Um `429` da cota diária do Gemini gratuito não é tentado de novo, e o script **para de chamar o Gemini** pelo resto da rodada (os artistas restantes saem como `skipped`), porque cada chamada a mais seria outra recusa; ele avisa no final para rodar outra vez depois que a cota renovar (meia-noite no horário do Pacífico), **sem `--force`**, para refazer só os que faltam (com `--force` ele refaz todos e gasta a cota com quem já estava gravado). A saída mostra qual cota o `429` atingiu (por exemplo `GenerateRequestsPerDayPerProjectPerModel-FreeTier`); um `429` da cota por minuto é tentado de novo depois da espera. `--limit <n>` limita as chamadas ao Gemini da rodada, tentativas incluídas. A cota é por projeto do Google, não por chave: a API em produção com uma chave do mesmo projeto gasta a mesma cota a cada artista sem resultado gravado que alguém abre. Na geração o Gemini tem até 60 s para responder; na API, 16 s. Há uma pausa de 6 s entre artistas (`--delay <ms>`) para ficar dentro do limite por minuto do plano gratuito. `summary: no_findings` não é falha: o Wikidata não tem uma pessoa que seja certamente o artista, e o Gemini nem é chamado. A data mostrada na tela (`retrievedAt`) é a da geração. Com `--stale-period`, um resultado gravado só é refeito quando o mapa do período que ele guarda (`period`) difere do que as fronteiras e os nomes publicados pelo app dão hoje (por exemplo, depois de uma mudança em `state-names.json`); os artistas sem resultado também entram, e repetir o comando depois de um `429` continua de onde parou. Se a API usar um usuário só de leitura, ele precisa de `SELECT` nessa tabela também (`GRANT SELECT ON research_results TO <usuário>`).
+
+### Fotos dos artistas
+
+As fotos ficam no banco (tabela `artist_photos`), nunca neste repositório público. Cada artista tem `photo { url credit sourceUrl }` na API, e a imagem é servida em `GET /photos/<slug>?v=<hash>`. O `hash` muda junto com a foto, então a resposta pode ficar em cache por um ano. Sem foto, `photo` é `null`, e o modo demo não tem fotos. Para gravar fotos, rode na sua máquina, com a `DATABASE_URL` do usuário dono do banco:
+
+```bash
+yarn db:migrate                          # cria a tabela artist_photos (uma vez)
+yarn photos:import --dir ~/atlas/fotos   # grava cada <slug>.webp|jpg|png da pasta
+```
+
+O nome do arquivo é o slug do artista (`anatol-wladyslaw.webp`). Um `photos.json` opcional na mesma pasta dá o crédito de cada foto (`{ "anatol-wladyslaw": { "credit": "…", "sourceUrl": "https://…" } }`). Sem ele o crédito fica nulo e não é inventado. Gravar de novo um slug troca a foto. Arquivos que não são JPEG, PNG ou WebP de verdade, e slugs sem artista, são listados e ficam de fora. A migração dá `SELECT` na tabela ao usuário `atlas_api_readonly` quando ele existe.
 
 ### Vínculos revisados com o Wikidata
 

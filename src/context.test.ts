@@ -21,7 +21,7 @@ describe("createContext", () => {
     await context().data();
     await context().data();
     const reads = select.mock.calls.length;
-    expect(reads).toBe(7);
+    expect(reads).toBe(8);
 
     now = 1000;
     await context().data();

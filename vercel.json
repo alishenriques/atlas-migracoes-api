@@ -2,5 +2,14 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": null,
   "outputDirectory": "public",
-  "rewrites": [{ "source": "/graphql", "destination": "/api/graphql" }]
+  "rewrites": [
+    {
+      "source": "/graphql",
+      "destination": "/api/graphql"
+    },
+    {
+      "source": "/photos/:slug",
+      "destination": "/api/graphql"
+    }
+  ]
 }

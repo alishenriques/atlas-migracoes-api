@@ -1,14 +1,17 @@
-import type { Artist, Dataset, Exhibition, Place, Publication, Work } from "../schemas/domain.js";
+import type { Artist, ArtistPhoto, Dataset, Exhibition, Place, Publication, Work } from "../schemas/domain.js";
 import type { Database } from "./client.js";
-import { artists, exhibitions, places, publications, workExhibitions, workPublications, works } from "./schema.js";
+import { artistPhotos, artists, exhibitions, places, publications, workExhibitions, workPublications, works } from "./schema.js";
 
 /**
  * The whole collection is small (hundreds of rows), so it is loaded whole
  * (once every few minutes per instance, see context.ts) and resolved from memory. That keeps resolvers simple and avoids N+1
  * queries; revisit if the base grows past a few thousand records.
  */
-export async function loadDataset(db: Database): Promise<Dataset> {
-  const [placeRows, artistRows, workRows, exhibitionRows, publicationRows, exhibitionLinks, publicationLinks] =
+/** The collection plus what the API serves about the artists' photos (the simulated demo dataset has none). */
+export type LoadedDataset = Dataset & { photos?: ArtistPhoto[] };
+
+export async function loadDataset(db: Database): Promise<LoadedDataset> {
+  const [placeRows, artistRows, workRows, exhibitionRows, publicationRows, exhibitionLinks, publicationLinks, photoRows] =
     await Promise.all([
       db.select().from(places),
       db.select().from(artists),
@@ -17,6 +20,15 @@ export async function loadDataset(db: Database): Promise<Dataset> {
       db.select().from(publications),
       db.select().from(workExhibitions),
       db.select().from(workPublications),
+      // The images stay in the base; only what the API returns about them is loaded.
+      db
+        .select({
+          artistId: artistPhotos.artistId,
+          hash: artistPhotos.hash,
+          credit: artistPhotos.credit,
+          sourceUrl: artistPhotos.sourceUrl,
+        })
+        .from(artistPhotos),
     ]);
 
   const exhibitionsByWork = group(exhibitionLinks, (link) => link.workId, (link) => link.exhibitionId);
@@ -42,6 +54,7 @@ export async function loadDataset(db: Database): Promise<Dataset> {
     })),
     exhibitions: exhibitionRows,
     publications: publicationRows,
+    photos: photoRows,
   };
 }
 
@@ -64,12 +77,13 @@ export type DatasetIndex = {
   work: Map<string, Work>;
   exhibition: Map<string, Exhibition>;
   publication: Map<string, Publication>;
+  photoByArtist: Map<string, ArtistPhoto>;
   worksByArtist: Map<string, Work[]>;
   worksByExhibition: Map<string, Work[]>;
   worksByPublication: Map<string, Work[]>;
 };
 
-export function indexDataset(dataset: Dataset): DatasetIndex {
+export function indexDataset(dataset: LoadedDataset): DatasetIndex {
   const byId = <T extends { id: string }>(items: T[]) => new Map(items.map((item) => [item.id, item]));
   const linked = (pick: (work: Work) => string[]) => {
     const map = new Map<string, Work[]>();
@@ -91,6 +105,7 @@ export function indexDataset(dataset: Dataset): DatasetIndex {
     work: byId(dataset.works),
     exhibition: byId(dataset.exhibitions),
     publication: byId(dataset.publications),
+    photoByArtist: new Map((dataset.photos ?? []).map((photo) => [photo.artistId, photo])),
     worksByArtist: group(dataset.works, (work) => work.artistId, (work) => work),
     worksByExhibition: linked((work) => work.exhibitionIds),
     worksByPublication: linked((work) => work.publicationIds),

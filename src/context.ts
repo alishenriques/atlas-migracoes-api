@@ -8,6 +8,8 @@ export type AppContext = {
   env: Env;
   db: Database | null;
   source: DataSource;
+  /** Where this API is reached (e.g. https://api.example), to build absolute photo URLs. */
+  origin: string;
   /** The collection, loaded at most once every `datasetTtlMs` per running instance. */
   data: () => Promise<DatasetIndex>;
   /** Open-source research on an artist, cached per artist (see research/research.ts). */
@@ -19,7 +21,7 @@ const demoIndex = indexDataset(demoDataset);
 /**
  * The base only changes when the spreadsheets are re-imported, so each running
  * instance keeps the loaded collection for a few minutes instead of reading
- * all seven tables on every request. A burst of traffic then costs one read
+ * all eight tables on every request. A burst of traffic then costs one read
  * per instance, not one per request, which keeps the Neon free compute in
  * reserve. A failed load is not kept.
  */
@@ -43,7 +45,8 @@ export function createContext(
     return entry.index;
   };
 
-  return function context(): AppContext {
-    return { env, db, source: db ? "database" : "demo", research, data };
+  return function context(initial: { request?: Request } = {}): AppContext {
+    const origin = initial.request ? new URL(initial.request.url).origin : `http://localhost:${env.PORT}`;
+    return { env, db, source: db ? "database" : "demo", origin, research, data };
   };
 }

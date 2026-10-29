@@ -59,6 +59,16 @@ export const typeDefs = /* GraphQL */ `
     "Exhibitions where any of this artist's works in the collection were shown, oldest first."
     exhibitions: [Exhibition!]!
     publications: [Publication!]!
+    "The artist's photo; null while the base has none."
+    photo: ArtistPhoto
+  }
+
+  type ArtistPhoto {
+    "Absolute URL of the image. It changes whenever the photo does, so it can be cached for good."
+    url: String!
+    "Who holds the photo or where it was published; null while unknown."
+    credit: String
+    sourceUrl: String
   }
 
   type Work {
@@ -382,6 +392,12 @@ export const resolvers = {
     },
   },
   Artist: {
+    photo: async (artist: Artist, _: unknown, context: AppContext) => {
+      const photo = (await context.data()).photoByArtist.get(artist.id);
+      return photo
+        ? { url: `${context.origin}/photos/${artist.slug}?v=${photo.hash}`, credit: photo.credit, sourceUrl: photo.sourceUrl }
+        : null;
+    },
     birthPlace: withData((artist: Artist, data) => placeOf(artist.birthPlaceId, data)),
     deathPlace: withData((artist: Artist, data) => placeOf(artist.deathPlaceId, data)),
     works: withData((artist: Artist, data) => data.worksByArtist.get(artist.id) ?? []),

@@ -23,7 +23,7 @@ export async function createTestDatabase(): Promise<Database> {
 
   const db = await sharedDb;
   await db.execute(
-    sql`truncate table research_results, work_exhibitions, work_publications, works, exhibitions, publications, artists, places, import_batches`,
+    sql`truncate table artist_photos, research_results, work_exhibitions, work_publications, works, exhibitions, publications, artists, places, import_batches`,
   );
   return db;
 }

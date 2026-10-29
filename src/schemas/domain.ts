@@ -124,6 +124,14 @@ export const publicationSchema = z.object({
   relatedExhibitionTitle: z.string().nullable(),
 });
 
+/** What the API serves about an artist's photo; the image itself is fetched from /photos/<slug>. */
+export const artistPhotoSchema = z.object({
+  artistId: z.string(),
+  hash: z.string(),
+  credit: z.string().nullable(),
+  sourceUrl: z.string().nullable(),
+});
+
 export const datasetSchema = z.object({
   places: z.array(placeSchema),
   artists: z.array(artistSchema),
@@ -139,6 +147,7 @@ export type Artist = z.infer<typeof artistSchema>;
 export type Work = z.infer<typeof workSchema>;
 export type Exhibition = z.infer<typeof exhibitionSchema>;
 export type Publication = z.infer<typeof publicationSchema>;
+export type ArtistPhoto = z.infer<typeof artistPhotoSchema>;
 export type Dataset = z.infer<typeof datasetSchema>;
 
 /** Where the data served right now comes from. "demo" records are simulated and never historical. */

@@ -16,7 +16,8 @@
     "db:migrate": "tsx src/db/migrate.ts",
     "import:xlsx": "tsx src/import/cli.ts",
     "geocode": "tsx src/geocode/cli.ts",
-    "research:generate": "tsx src/research/cli.ts"
+    "research:generate": "tsx src/research/cli.ts",
+    "photos:import": "tsx src/photos/cli.ts"
   },
   "dependencies": {
     "@escape.tech/graphql-armor": "^3.2.0",
