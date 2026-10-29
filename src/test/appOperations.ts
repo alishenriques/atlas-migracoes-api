@@ -271,6 +271,7 @@ export const appOperations: Record<string, string> = {
         description
         url
         basis
+        note
       }
       candidates {
         id
