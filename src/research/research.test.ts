@@ -225,6 +225,7 @@ describe("researchArtist", () => {
       description: "pintor lituano-brasileiro",
       url: "https://www.wikidata.org/wiki/Q1340566",
       basis: "birth_year",
+      note: null,
     });
     expect(research.sources).toEqual([
       { source: "wikidata", status: "ok", detail: null },
@@ -311,6 +312,32 @@ describe("researchArtist", () => {
     expect(research.searchedNames).toEqual(["Lasar Ignacy Segall", "Lasar Segall"]);
     expect(research.match).toBeNull();
     expect(research.candidates[0]).toMatchObject({ id: "Q1340566", foundBy: "Lasar Segall", reason: "shorter_name" });
+  });
+
+  it("uses a reviewed link without searching, with the researcher's note", async () => {
+    const fetcher = fakeFetcher(found);
+    const link = { confirmed: "Q1340566", rejected: [], note: "Conferido pela data de nascimento." };
+    const research = await researchArtist(artist({ birthDate: date(1700) }), noPlaces, deps(fetcher, { links: () => link }), now);
+    expect(fetcher.mock.calls.some(([url]) => url.includes("wbsearchentities"))).toBe(false);
+    expect(research.searchedNames).toEqual([]);
+    expect(research.match).toMatchObject({ id: "Q1340566", basis: "reviewed", note: "Conferido pela data de nascimento." });
+    expect(research.candidates).toEqual([]);
+    expect(research.findings.length).toBeGreaterThan(0);
+  });
+
+  it("reports a reviewed item Wikidata no longer has", async () => {
+    const link = { confirmed: "Q7", rejected: [], note: null };
+    const research = await researchArtist(artist(), noPlaces, deps(fakeFetcher(found), { links: () => link }), now);
+    expect(research.match).toBeNull();
+    expect(research.sources).toEqual([{ source: "wikidata", status: "error", detail: "reviewed item Q7 not found" }]);
+  });
+
+  it("never matches nor offers a rejected item", async () => {
+    const link = { confirmed: null, rejected: ["Q1340566"], note: null };
+    const research = await researchArtist(artist(), noPlaces, deps(fakeFetcher(found), { links: () => link }), now);
+    expect(research.searchedNames).toEqual(["Lasar Segall"]);
+    expect(research.match).toBeNull();
+    expect(research.candidates.map((candidate) => candidate.id)).toEqual(["Q999"]);
   });
 
   it("reports a source that fails instead of failing the whole research", async () => {

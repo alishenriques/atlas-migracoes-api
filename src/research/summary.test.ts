@@ -32,7 +32,7 @@ const artist: Artist = {
   deathDate: date(1957),
 };
 
-const match: Match = { id: "Q1", label: "Lasar Segall", description: null, url: "https://www.wikidata.org/wiki/Q1", basis: "birth_year" };
+const match: Match = { id: "Q1", label: "Lasar Segall", description: null, url: "https://www.wikidata.org/wiki/Q1", basis: "birth_year", note: null };
 
 const finding = (property: Finding["property"], value: string, reliability: Finding["reliability"] = "undetermined"): Finding => ({
   source: "wikidata",
