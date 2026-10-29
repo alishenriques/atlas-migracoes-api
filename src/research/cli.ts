@@ -1,18 +1,21 @@
 import "dotenv/config";
+import { readFile } from "node:fs/promises";
 import { parseArgs } from "node:util";
 import { createDatabase } from "../db/client.js";
 import { indexDataset, loadDataset } from "../db/dataset.js";
 import { loadEnv } from "../schemas/domain.js";
+import { parseLinks } from "./links.js";
 import { generateResearch } from "./stored.js";
 import { createStatesLoader } from "./territories.js";
 
-// Usage: yarn research:generate [--slug <slug> ...] [--force | --stale-period] [--limit <calls>] [--delay <ms>] [--retries <n>]
+// Usage: yarn research:generate [--slug <slug> ...] [--force | --stale-period] [--links <file>] [--limit <calls>] [--delay <ms>] [--retries <n>]
 // Runs on the machine that owns the database (the owner DATABASE_URL); the API only reads the results.
 const { values } = parseArgs({
   options: {
     slug: { type: "string", multiple: true },
     force: { type: "boolean", default: false },
     "stale-period": { type: "boolean", default: false },
+    links: { type: "string" },
     limit: { type: "string" },
     delay: { type: "string", default: "6000" },
     retries: { type: "string", default: "2" },
@@ -28,6 +31,7 @@ if (!db) {
 if (!env.GEMINI_API_KEY) console.warn("GEMINI_API_KEY não definida: os resultados serão gravados sem resumo (not_configured).");
 
 const data = indexDataset(await loadDataset(db));
+const links = values.links ? parseLinks(JSON.parse(await readFile(values.links, "utf8")), data.dataset.artists) : undefined;
 const outcomes = await generateResearch(
   db,
   data,
@@ -36,6 +40,7 @@ const outcomes = await generateResearch(
     // Nobody is waiting on a page here, so the model gets a minute for long prompts.
     gemini: env.GEMINI_API_KEY ? { apiKey: env.GEMINI_API_KEY, model: env.GEMINI_MODEL, timeoutMs: 60_000 } : null,
     states: createStatesLoader(fetch, env.CARTOGRAPHY_URL),
+    links,
   },
   {
     slugs: values.slug ?? [],
