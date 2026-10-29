@@ -142,6 +142,25 @@ yarn research:generate --limit 15        # no máximo 15 chamadas ao Gemini nest
 
 Cada linha da saída diz `stored`, `kept` (já estava gravado) ou `failed` (uma fonte ou o Gemini falhou; nada é gravado, e é só rodar de novo: só os que falharam são refeitos). Um artista que falha (um 503 do Gemini sobrecarregado, um timeout) é tentado mais 2 vezes, depois de 30 s e de 60 s (`--retries <n>`). Um `429` da cota diária do Gemini gratuito não é tentado de novo, e o script **para de chamar o Gemini** pelo resto da rodada (os artistas restantes saem como `skipped`), porque cada chamada a mais seria outra recusa; ele avisa no final para rodar outra vez depois que a cota renovar (meia-noite no horário do Pacífico), **sem `--force`**, para refazer só os que faltam (com `--force` ele refaz todos e gasta a cota com quem já estava gravado). A saída mostra qual cota o `429` atingiu (por exemplo `GenerateRequestsPerDayPerProjectPerModel-FreeTier`); um `429` da cota por minuto é tentado de novo depois da espera. `--limit <n>` limita as chamadas ao Gemini da rodada, tentativas incluídas. A cota é por projeto do Google, não por chave: a API em produção com uma chave do mesmo projeto gasta a mesma cota a cada artista sem resultado gravado que alguém abre. Na geração o Gemini tem até 60 s para responder; na API, 16 s. Há uma pausa de 6 s entre artistas (`--delay <ms>`) para ficar dentro do limite por minuto do plano gratuito. `summary: no_findings` não é falha: o Wikidata não tem uma pessoa que seja certamente o artista, e o Gemini nem é chamado. A data mostrada na tela (`retrievedAt`) é a da geração. Com `--stale-period`, um resultado gravado só é refeito quando o mapa do período que ele guarda (`period`) difere do que as fronteiras e os nomes publicados pelo app dão hoje (por exemplo, depois de uma mudança em `state-names.json`); os artistas sem resultado também entram, e repetir o comando depois de um `429` continua de onde parou. Se a API usar um usuário só de leitura, ele precisa de `SELECT` nessa tabela também (`GRANT SELECT ON research_results TO <usuário>`).
 
+### Vínculos revisados com o Wikidata
+
+Quando a busca não acha o artista com certeza, a pesquisa grava as pistas (pessoas que o Wikidata devolveu e por que não foram ligadas). Um pesquisador confere cada pista e registra a decisão numa lista revisada, que fica na máquina que roda a geração, como as correções de lugares, e **nunca no repositório**:
+
+```json
+{
+  "artista-a": { "confirmed": "Q123", "note": "No Wikidata sem o nome do meio; mesma data de nascimento." },
+  "artista-b": { "rejected": ["Q456"], "note": "Homônima de outro país, outra pessoa." }
+}
+```
+
+```bash
+yarn research:generate --links ~/atlas/vinculos-wikidata.json
+```
+
+- `confirmed`: o item é usado direto, sem busca, e a tela diz que o vínculo foi conferido por um pesquisador, com a nota (`match.basis = reviewed`, `match.note`).
+- `rejected`: esses itens nunca são ligados ao artista nem aparecem como pistas, mesmo que a busca os encontre de novo.
+- Com `--links`, cada artista cujo resultado gravado ainda não segue a lista é refeito, mesmo sem `--force`; os outros ficam como estão. Um slug que não existe na base é erro, não é ignorado. A API em produção não lê a lista: ela só serve o que a geração gravou.
+
 ### Limites por requisição
 
 A API é pública, então cada requisição tem limites (`src/graphql/limits.ts`, com graphql-armor): profundidade 8, até 10 aliases, 2000 tokens e custo 5000, e **uma só pesquisa (`research`) por requisição**, para que aliases ou fragments não disparem a pesquisa de todos os artistas de uma vez e esgotem a cota grátis do Gemini. As operações do app (`src/test/appOperations.ts`, cópia de `atlas-migracoes/src/lib/atlas.ts`) ficam bem abaixo disso, e um teste garante que continuem aceitas. Em produção a página do GraphiQL fica desligada. Cada instância guarda a base carregada por 5 minutos, em vez de ler as sete tabelas a cada requisição.
