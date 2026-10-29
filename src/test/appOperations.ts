@@ -1,6 +1,6 @@
 /**
  * The operations the Atlas app sends, copied from atlas-migracoes
- * `src/lib/atlas.ts` (2026-10-20). The query limits must keep accepting them;
+ * `src/lib/atlas.ts` (2026-10-29). The query limits must keep accepting them;
  * update this copy when the app's queries change.
  */
 export const appOperations: Record<string, string> = {
@@ -64,6 +64,49 @@ export const appOperations: Record<string, string> = {
         place {
           ...MapPlace
         }
+      }
+    }
+  }
+`,
+  ArtistIndex: /* GraphQL */ `
+  
+  fragment MapPlace on Place {
+    id
+    label
+    country
+    currentName
+    lat
+    lng
+  }
+
+  fragment MapDate on FuzzyDate {
+    raw
+    year
+    endYear
+    iso
+    precision
+  }
+
+
+  query ArtistIndex {
+    artists {
+      slug
+      name
+      birthPlace {
+        ...MapPlace
+      }
+      birthDate {
+        ...MapDate
+      }
+      deathPlace {
+        ...MapPlace
+      }
+      deathDate {
+        ...MapDate
+      }
+      photo {
+        url
+        credit
       }
     }
   }
@@ -146,6 +189,10 @@ export const appOperations: Record<string, string> = {
         }
         category
         periodical
+      }
+      photo {
+        url
+        credit
       }
     }
   }
@@ -264,7 +311,6 @@ export const appOperations: Record<string, string> = {
           ...MapDate
         }
       }
-      searchedNames
       match {
         id
         label
@@ -273,6 +319,7 @@ export const appOperations: Record<string, string> = {
         basis
         note
       }
+      searchedNames
       candidates {
         id
         label
