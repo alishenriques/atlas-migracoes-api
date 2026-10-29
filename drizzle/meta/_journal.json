@@ -15,6 +15,13 @@
       "when": 1792533463850,
       "tag": "0001_research_results",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1793314288323,
+      "tag": "0002_artist_photos",
+      "breakpoints": true
     }
   ]
 }

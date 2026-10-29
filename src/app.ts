@@ -1,7 +1,8 @@
-import { createYoga } from "graphql-yoga";
+import { createYoga, type Plugin } from "graphql-yoga";
 import { createContext } from "./context.js";
 import { createDatabase, type Database } from "./db/client.js";
 import { queryLimits } from "./graphql/limits.js";
+import { photoSlug, servePhoto } from "./photos/serve.js";
 import { schema } from "./graphql/schema.js";
 import { createResearchCache } from "./research/research.js";
 import { storedResearch } from "./research/stored.js";
@@ -30,7 +31,7 @@ export function createApp(env: Env = loadEnv(), deps: AppDependencies = {}) {
     graphqlEndpoint: "/graphql",
     // The explorer page is for local development; the public API serves the app only.
     graphiql: env.NODE_ENV !== "production",
-    plugins: queryLimits(),
+    plugins: [...queryLimits(), photos(db)],
     cors: {
       origin: env.CORS_ORIGIN,
       credentials: false,
@@ -38,4 +39,14 @@ export function createApp(env: Env = loadEnv(), deps: AppDependencies = {}) {
     },
     context: createContext(env, db, research),
   });
+}
+
+/** Serves `/photos/<slug>` from the same function as /graphql (see vercel.json). */
+function photos(db: Database | null): Plugin {
+  return {
+    async onRequest({ request, url, endResponse }) {
+      const slug = photoSlug(url.pathname);
+      if (slug) endResponse(await servePhoto(db, slug, request.method));
+    },
+  };
 }
