@@ -1,0 +1,31 @@
+# Turns on auto-merge (Rebase and merge) for Dependabot's patch and minor
+# updates. GitHub merges only after the checks the "restricted main" ruleset
+# requires are green, so tests and the coverage floors still gate every merge.
+# Majors are left for Alisson's review. Needs "Allow auto-merge" in the repo
+# settings; turning that off pauses this without touching code.
+name: Dependabot auto-merge
+
+on: pull_request
+
+permissions:
+  contents: read
+
+jobs:
+  auto-merge:
+    if: github.event.pull_request.user.login == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - id: metadata
+        uses: dependabot/fetch-metadata@v2
+      # A grouped PR reports its largest update, so a group with any major
+      # in it is never merged here.
+      - if: >-
+          steps.metadata.outputs.update-type == 'version-update:semver-patch' ||
+          steps.metadata.outputs.update-type == 'version-update:semver-minor'
+        run: gh pr merge --auto --rebase "$PR_URL"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

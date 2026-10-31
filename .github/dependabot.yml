@@ -1,20 +1,38 @@
-# Weekly update PRs for dependencies and for the actions the workflows use.
-# Each one goes through CI and Alisson's review like any other PR.
+# Weekly update PRs for dependencies and for the actions the workflows use,
+# grouped so a week brings at most one PR per group. Patch and minor updates
+# merge on their own once CI is green (see workflows/dependabot-auto-merge.yml);
+# majors wait for Alisson's review like any other PR.
 version: 2
 updates:
   - package-ecosystem: npm
     directory: /
     schedule:
       interval: weekly
+    # A release has to be out for a few days before it is proposed, so a
+    # broken or compromised version is usually caught (and pulled) first.
+    # Security updates are not delayed.
+    cooldown:
+      default-days: 3
+    ignore:
+      # Node's types follow the Node version CI runs, never the latest.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
     groups:
       # vitest and its coverage provider must share a version, so a major
-      # bump of one without the other breaks CI. Listed before the minor and
-      # patch group so they always come together in this one.
+      # bump of one without the other breaks CI. Listed first so they always
+      # come together in this one.
       vitest:
         patterns: ["vitest", "@vitest/*"]
       minor-and-patch:
         update-types: [minor, patch]
+      major:
+        update-types: [major]
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 3
+    groups:
+      actions:
+        patterns: ["*"]
