@@ -14,7 +14,7 @@ updates:
     cooldown:
       default-days: 3
     ignore:
-      # Node's types follow the Node version CI runs, never the latest.
+      # Node's types follow the Node line the project runs on, never the latest.
       - dependency-name: "@types/node"
         update-types: ["version-update:semver-major"]
     groups:
