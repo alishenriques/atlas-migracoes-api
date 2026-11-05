@@ -336,6 +336,7 @@ export const appOperations: Record<string, string> = {
         property
         propertyId
         value
+        labelLanguage
         references
         reliability
         reviews

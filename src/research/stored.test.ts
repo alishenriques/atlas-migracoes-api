@@ -265,6 +265,13 @@ describe("research with stored results", () => {
     expect((await storedResearch(db)(artist("a")))?.match).toEqual({ ...match, note: null });
   });
 
+  it("reads findings stored before label languages were recorded", async () => {
+    const { db } = await seeded("a");
+    const older = { source: "wikidata", sourceUrl: "https://www.wikidata.org/wiki/Q1", sourceTitle: "Wikidata: A (Q1)", property: "educatedAt", propertyId: "P69", value: "Prussian Academy of Arts", references: 1, reliability: "documented", reviews: [] };
+    await db.insert(researchResults).values({ artistId: "id-a", research: research({ findings: [older] } as unknown as Partial<Research>), generatedAt: new Date() });
+    expect((await storedResearch(db)(artist("a")))?.findings).toEqual([{ ...older, labelLanguage: null }]);
+  });
+
   it("tells when a stored result does not follow the reviewed link yet", () => {
     const match = { id: "Q1", label: "A", description: null, url: "https://www.wikidata.org/wiki/Q1", basis: "reviewed" as const, note: "ok" };
     const candidate = { id: "Q2", label: "B", description: null, url: "https://www.wikidata.org/wiki/Q2", birthYear: null, foundBy: "A", reason: "no_birth_year" as const };

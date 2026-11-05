@@ -184,7 +184,7 @@ A API é pública, então cada requisição tem limites (`src/graphql/limits.ts`
 {
   research(slug: "lasar-segall") {
     match { id label url basis }
-    findings { property value sourceUrl reliability reviews }
+    findings { property value labelLanguage sourceUrl reliability reviews }
     sources { source status detail }
     period { day approximate birthState states }
     summary { status text citations prompt model detail }

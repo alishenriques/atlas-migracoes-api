@@ -7,11 +7,14 @@ import {
   entityUrl,
   getEntities,
   getSummary,
+  labelIn,
   labelOf,
   searchItems,
   type ClaimValue,
   type Entity,
   type Fetcher,
+  type Label,
+  type LabelLanguage,
 } from "./wikimedia.js";
 
 /** Wikidata properties read for an artist, in the order they are shown. */
@@ -48,6 +51,13 @@ export type Finding = {
   propertyId: string | null;
   /** The value as the source gives it: a label, a text, or a date as precise as the source (YYYY, YYYY-MM or YYYY-MM-DD). */
   value: string;
+  /**
+   * The language of the Wikidata label the value is (pt-br, pt, mul, en), for
+   * values that are items. Anything but pt-br or pt means Wikidata has no
+   * Portuguese label, so the name is as the source gives it, never translated
+   * here. Null for dates, texts, summaries and items shown by their id.
+   */
+  labelLanguage: LabelLanguage | null;
   /** References Wikidata attaches to the statement. */
   references: number;
   /** Referenced statements are "documented"; unreferenced statements and encyclopedia text are "undetermined". */
@@ -219,19 +229,21 @@ function conflicts(property: FindingProperty, value: ClaimValue, artist: Artist)
 }
 
 /** Every statement of the properties the Atlas reads, as findings traced to the item's page. */
-export function wikidataFindings(entity: Entity, artist: Artist, labels: Map<string, string>): Finding[] {
+export function wikidataFindings(entity: Entity, artist: Artist, labels: Map<string, Label>): Finding[] {
   return PROPERTIES.flatMap(({ id, key, place }) =>
     claimsOf(entity, id).map(({ value, references }) => {
       const reviews: Review[] = [];
       if (place) reviews.push("present_day_name");
       if (conflicts(key, value, artist)) reviews.push("conflicts_with_collection");
+      const label = value.kind === "item" ? labels.get(value.id) : undefined;
       return {
         source: "wikidata" as const,
         sourceUrl: entityUrl(entity.id),
         sourceTitle: `Wikidata: ${labelOf(entity)} (${entity.id})`,
         property: key,
         propertyId: id,
-        value: value.kind === "time" ? value.iso : value.kind === "item" ? (labels.get(value.id) ?? value.id) : value.text,
+        value: value.kind === "time" ? value.iso : value.kind === "item" ? (label?.text ?? value.id) : value.text,
+        labelLanguage: label?.language ?? null,
         references,
         reliability: references > 0 ? ("documented" as const) : ("undetermined" as const),
         reviews,
@@ -287,9 +299,9 @@ async function lookUp(
       PROPERTIES.flatMap(({ id }) => claimsOf(entity, id)).flatMap(({ value }) => (value.kind === "item" ? [value.id] : [])),
     ),
   ];
-  let labels = new Map<string, string>();
+  let labels = new Map<string, Label>();
   try {
-    labels = new Map((await getEntities(fetcher, valueIds, "labels")).map((item) => [item.id, labelOf(item)]));
+    labels = new Map((await getEntities(fetcher, valueIds, "labels")).map((item) => [item.id, labelIn(item)]));
     sources.push({ source: "wikidata", status: "ok", detail: null });
   } catch (error) {
     // The statements still stand; their values show as item ids until the labels load.
@@ -314,6 +326,7 @@ async function lookUp(
         property: "summary",
         propertyId: null,
         value: summary.extract,
+        labelLanguage: null,
         references: 0,
         reliability: "undetermined",
         reviews: [],

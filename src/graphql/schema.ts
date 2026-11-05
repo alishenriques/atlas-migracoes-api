@@ -231,6 +231,12 @@ export const typeDefs = /* GraphQL */ `
     propertyId: String
     "As the source gives it: a label, a text, or a date as precise as the source (YYYY, YYYY-MM or YYYY-MM-DD)."
     value: String!
+    """
+    The language of the Wikidata label the value is (pt-br, pt, mul, en), for values that are items.
+    Anything but pt-br or pt means Wikidata has no Portuguese label: the name is as the source gives it, not a translation.
+    Null for dates, texts, summaries and items shown by their id.
+    """
+    labelLanguage: String
     "References Wikidata attaches to the statement."
     references: Int!
     reliability: FindingReliability!

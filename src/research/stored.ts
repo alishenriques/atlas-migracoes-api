@@ -17,9 +17,15 @@ export function storedResearch(db: Database): StoredResearch {
       .from(researchResults)
       .where(eq(researchResults.artistId, artist.id));
     if (!row) return null;
-    // Results stored before searched names, candidates and link notes were recorded lack them.
-    const { searchedNames = [], candidates = [], match = null }: Partial<Research> = row.research;
-    return { ...row.research, searchedNames, candidates, match: match && { ...match, note: match.note ?? null } };
+    // Results stored before searched names, candidates, link notes and label languages were recorded lack them.
+    const { searchedNames = [], candidates = [], match = null, findings = [] }: Partial<Research> = row.research;
+    return {
+      ...row.research,
+      searchedNames,
+      candidates,
+      match: match && { ...match, note: match.note ?? null },
+      findings: findings.map((finding) => ({ ...finding, labelLanguage: finding.labelLanguage ?? null })),
+    };
   };
 }
 
