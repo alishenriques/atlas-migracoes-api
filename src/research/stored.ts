@@ -79,6 +79,17 @@ export type GenerateOutcome = {
 };
 
 /**
+ * The `--slug` arguments that retry only the artists left out of a run. They are
+ * needed with --force too: without it, an artist that already has an older
+ * result is kept and never retried.
+ */
+export const retrySlugs = (outcomes: GenerateOutcome[]) =>
+  outcomes
+    .filter((outcome) => outcome.outcome === "failed" || outcome.outcome === "skipped")
+    .map((outcome) => `--slug ${outcome.slug}`)
+    .join(" ");
+
+/**
  * True when Gemini refused for its daily quota (429); trying again the same day
  * only spends requests. A 429 for the per-minute quota is not: it passes after a wait.
  */
@@ -110,6 +121,8 @@ export async function generateResearch(
   const states = stalePeriod ? await deps.states() : null;
   if (stalePeriod && !states) throw new Error("the period's map could not be loaded, so stale results cannot be told apart");
 
+  // A failed source means the answer is discarded and retried: never spend a Gemini request on it.
+  const generation: ResearchDeps = { ...deps, skipSummaryOnSourceError: true };
   let calls = 0;
   let stop: string | null = null;
 
@@ -134,12 +147,12 @@ export async function generateResearch(
     if (outcomes.some((outcome) => outcome.outcome !== "kept")) await sleep(delayMs);
 
     let now = clock();
-    let research = await researchArtist(artist, placesOf(artist, data), deps, now);
+    let research = await researchArtist(artist, placesOf(artist, data), generation, now);
     if (askedGemini(research)) calls++;
     for (let attempt = 0; attempt < retries && hasFailure(research) && !quotaExhausted(research) && calls < limit; attempt++) {
       await sleep(retryDelayMs * 2 ** attempt);
       now = clock();
-      research = await researchArtist(artist, placesOf(artist, data), deps, now);
+      research = await researchArtist(artist, placesOf(artist, data), generation, now);
       if (askedGemini(research)) calls++;
     }
     // With the daily quota spent, every further call is one more refused request.
