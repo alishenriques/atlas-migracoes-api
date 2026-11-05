@@ -356,6 +356,36 @@ describe("researchArtist", () => {
     });
     expect((await researchArtist(artist(), noPlaces, deps(thrown), now)).sources[0]?.detail).toBe("network down");
   });
+
+  it("names the network error behind Node's \"fetch failed\"", async () => {
+    const withCode = vi.fn<Fetcher>(async () => {
+      throw new TypeError("fetch failed", { cause: Object.assign(new Error("connect ETIMEDOUT"), { code: "ETIMEDOUT" }) });
+    });
+    expect((await researchArtist(artist(), noPlaces, deps(withCode), now)).sources[0]?.detail).toBe("fetch failed (ETIMEDOUT)");
+
+    const withMessage = vi.fn<Fetcher>(async () => {
+      throw new TypeError("fetch failed", { cause: new Error("other side closed") });
+    });
+    expect((await researchArtist(artist(), noPlaces, deps(withMessage), now)).sources[0]?.detail).toBe("fetch failed (other side closed)");
+
+    const bare = vi.fn<Fetcher>(async () => {
+      throw new TypeError("fetch failed", { cause: "?" });
+    });
+    expect((await researchArtist(artist(), noPlaces, deps(bare), now)).sources[0]?.detail).toBe("fetch failed");
+  });
+
+  it("does not ask the model when a source failed, if told so (generation)", async () => {
+    const fetcher = fakeFetcher({ ...found, fail: /wikipedia/ });
+    const gemini = { apiKey: "k", model: "m" };
+    const research = await researchArtist(artist(), noPlaces, deps(fetcher, { gemini, skipSummaryOnSourceError: true }), now);
+    expect(research.summary).toMatchObject({ status: "not_configured", detail: "skipped: a source failed" });
+    expect(research.findings.length).toBeGreaterThan(0);
+    expect(fetcher.mock.calls.some(([url]) => url.includes("generativelanguage"))).toBe(false);
+
+    const live = fakeFetcher({ ...found, fail: /wikipedia/ });
+    await researchArtist(artist(), noPlaces, deps(live, { gemini }), now);
+    expect(live.mock.calls.some(([url]) => url.includes("generativelanguage"))).toBe(true);
+  });
 });
 
 // Warsaw in 1905 lay in the Russian Empire: a square around it is enough here.

@@ -4,7 +4,7 @@ import { artists, researchResults } from "../db/schema.js";
 import type { Artist, FuzzyDate } from "../schemas/domain.js";
 import { createTestApp, createTestDatabase } from "../test/helpers.js";
 import { createResearchCache, type Research, type ResearchDeps } from "./research.js";
-import { generateResearch, linkOutdated, storedResearch } from "./stored.js";
+import { generateResearch, linkOutdated, retrySlugs, storedResearch } from "./stored.js";
 import type { States } from "./territories.js";
 import type { Fetcher } from "./wikimedia.js";
 
@@ -50,6 +50,14 @@ const geminiError = (detail: string): Research => ({
 const noWait = { sleep: async () => {}, clock: () => new Date("2026-11-01T12:00:00Z") };
 
 describe("generateResearch", () => {
+  it("never asks Gemini for an artist whose sources failed, retries included", async () => {
+    const { db, data } = await seeded("a");
+    const fetcher = sources(true);
+    const outcomes = await generateResearch(db, data, { ...deps(fetcher), gemini: { apiKey: "k", model: "m" } }, { ...noWait, retries: 2 });
+    expect(outcomes).toEqual([{ slug: "a", outcome: "failed", detail: "wikidata: www.wikidata.org answered 503" }]);
+    expect(fetcher.mock.calls.some(([url]) => url.includes("generativelanguage"))).toBe(false);
+  });
+
   it("stores each complete result and skips the stored ones on the next run", async () => {
     const { db, data } = await seeded("a", "b");
     const sleep = vi.fn(async () => {});
@@ -311,5 +319,19 @@ describe("research with stored results", () => {
     const { gql } = createTestApp(db);
     const result = await gql<{ research: { match: { basis: string; note: string } } }>(`{ research(slug: "a") { match { basis note } } }`);
     expect(result.data?.research.match).toEqual({ basis: "reviewed", note: "Conferido." });
+  });
+});
+
+describe("retrySlugs", () => {
+  it("lists only the artists left out, as --slug arguments", () => {
+    expect(
+      retrySlugs([
+        { slug: "a", outcome: "stored", detail: "summary: ok" },
+        { slug: "b", outcome: "failed", detail: "wikidata: fetch failed" },
+        { slug: "c", outcome: "kept", detail: "already stored" },
+        { slug: "d", outcome: "skipped", detail: "Gemini's daily quota is spent" },
+      ]),
+    ).toBe("--slug b --slug d");
+    expect(retrySlugs([])).toBe("");
   });
 });

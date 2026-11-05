@@ -133,6 +133,11 @@ export type ResearchDeps = {
   states: () => Promise<States | null>;
   /** The reviewed link for an artist, when there is one (generation only; the API itself does not read the list). */
   links?: (artist: Artist) => WikidataLink | null;
+  /**
+   * Generation only: when a source failed, the result is not stored and is tried
+   * again, so asking the model would spend a daily request on a discarded answer.
+   */
+  skipSummaryOnSourceError?: boolean;
 };
 
 const HUMAN = "Q5";
@@ -240,7 +245,13 @@ export function wikidataFindings(entity: Entity, artist: Artist, labels: Map<str
   );
 }
 
-const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
+// Node's fetch reports every network failure as "fetch failed"; the cause says which (ENOTFOUND, ETIMEDOUT…).
+const message = (error: unknown) => {
+  if (!(error instanceof Error)) return String(error);
+  const cause: unknown = error.cause;
+  const code = cause instanceof Error ? ((cause as Error & { code?: unknown }).code ?? cause.message) : null;
+  return typeof code === "string" && code !== "" ? `${error.message} (${code})` : error.message;
+};
 
 /**
  * The matching Wikidata item, its statements on the artist's life and career,
@@ -353,6 +364,10 @@ export async function researchArtist(
 ): Promise<Research> {
   const [found, states] = await Promise.all([lookUp(artist, deps.fetcher, deps.links?.(artist) ?? null), deps.states()]);
   const period = states ? periodContext(states, artist, places.birth) : null;
+  if (deps.skipSummaryOnSourceError && found.sources.some((source) => source.status === "error")) {
+    const summary: Summary = { status: "not_configured", text: null, citations: [], prompt: null, model: null, detail: "skipped: a source failed" };
+    return { ...found, period, summary, retrievedAt: now.toISOString() };
+  }
   const summary = await summarize(deps.fetcher, deps.gemini, {
     artist,
     birthPlace: places.birth,

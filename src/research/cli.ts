@@ -5,7 +5,7 @@ import { createDatabase } from "../db/client.js";
 import { indexDataset, loadDataset } from "../db/dataset.js";
 import { loadEnv } from "../schemas/domain.js";
 import { parseLinks } from "./links.js";
-import { generateResearch } from "./stored.js";
+import { generateResearch, retrySlugs } from "./stored.js";
 import { createStatesLoader } from "./territories.js";
 
 // Usage: yarn research:generate [--slug <slug> ...] [--force | --stale-period] [--links <file>] [--limit <calls>] [--delay <ms>] [--retries <n>]
@@ -54,8 +54,7 @@ const outcomes = await generateResearch(
 for (const { slug, outcome, detail } of outcomes) console.log(`${outcome.padEnd(7)} ${slug} (${detail})`);
 const count = (kind: string) => outcomes.filter((outcome) => outcome.outcome === kind).length;
 const [failed, skipped] = [count("failed"), count("skipped")];
-console.log(
-  `\n${outcomes.length} artistas: ${outcomes.length - failed - skipped} ok, ${failed} com falha, ${skipped} não tentados. Rode o mesmo comando de novo (sem --force) para tentar só esses.`,
-);
+console.log(`\n${outcomes.length} artistas: ${outcomes.length - failed - skipped} ok, ${failed} com falha, ${skipped} não tentados.`);
+if (failed + skipped > 0) console.log(`Para tentar só esses, rode o mesmo comando trocando os --slug por:\n${retrySlugs(outcomes)}`);
 if (outcomes.some((outcome) => outcome.detail.includes("daily quota")))
   console.log("Gemini respondeu 429 pela cota diária do plano gratuito: o script parou de chamá-lo. Rode de novo depois que a cota renovar (meia-noite no horário do Pacífico).");
