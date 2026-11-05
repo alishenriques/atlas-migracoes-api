@@ -49,6 +49,7 @@ const segall = {
     P570: [claim(time("1958-08-02", 11))],
     P106: [claim(item("Q1028181"), 0, "deprecated"), claim(item("Q1028181"), 1, "preferred"), claim(item("Q42"))],
     P135: [claim({ snaktype: "somevalue" })],
+    P69: [claim(item("Q153"), 1)],
   },
   sitelinks: { ptwiki: { title: "Lasar Segall" }, enwiki: { title: "Lasar Segall" } },
 };
@@ -59,7 +60,8 @@ const namesake = {
 };
 const street = { id: "Q555", labels: { pt: { value: "Rua Lasar Segall" } }, claims: { P31: [claim(item("Q79007"))] } };
 const labels = {
-  Q216: { id: "Q216", labels: { pt: { value: "Vilnius" } } },
+  Q216: { id: "Q216", labels: { pt: { value: "Vílnius" }, "pt-br": { value: "Vilnius" }, en: { value: "Vilnius" } } },
+  Q153: { id: "Q153", labels: { mul: { value: "Akademie der Künste" }, en: { value: "Prussian Academy of Arts" } } },
   Q1028181: { id: "Q1028181", labels: { en: { value: "painter" } } },
   Q42: { id: "Q42", labels: {} },
 };
@@ -232,14 +234,19 @@ describe("researchArtist", () => {
       { source: "wikipedia", status: "ok", detail: null },
     ]);
     expect(research.retrievedAt).toBe("2026-10-18T06:00:00.000Z");
-    expect(research.findings.map(({ property, value, reliability, reviews }) => ({ property, value, reliability, reviews }))).toEqual([
-      { property: "birthDate", value: "1889-07-21", reliability: "documented", reviews: [] },
-      { property: "birthPlace", value: "Vilnius", reliability: "documented", reviews: ["present_day_name"] },
-      { property: "deathDate", value: "1958-08-02", reliability: "undetermined", reviews: ["conflicts_with_collection"] },
-      { property: "occupation", value: "painter", reliability: "documented", reviews: [] },
+    expect(
+      research.findings.map(({ property, value, labelLanguage, reliability, reviews }) => ({ property, value, labelLanguage, reliability, reviews })),
+    ).toEqual([
+      { property: "birthDate", value: "1889-07-21", labelLanguage: null, reliability: "documented", reviews: [] },
+      // Brazilian Portuguese first, then Portuguese, then the label for every language, then English.
+      { property: "birthPlace", value: "Vilnius", labelLanguage: "pt-br", reliability: "documented", reviews: ["present_day_name"] },
+      { property: "deathDate", value: "1958-08-02", labelLanguage: null, reliability: "undetermined", reviews: ["conflicts_with_collection"] },
+      { property: "occupation", value: "painter", labelLanguage: "en", reliability: "documented", reviews: [] },
+      { property: "educatedAt", value: "Akademie der Künste", labelLanguage: "mul", reliability: "documented", reviews: [] },
       {
         property: "summary",
         value: "Lasar Segall foi um pintor, escultor e gravador lituano naturalizado brasileiro.",
+        labelLanguage: null,
         reliability: "undetermined",
         reviews: [],
       },

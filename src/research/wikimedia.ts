@@ -92,7 +92,7 @@ export async function getEntities(
       action: "wbgetentities",
       ids: ids.slice(start, start + 50).join("|"),
       props,
-      languages: "pt|en",
+      languages: LABEL_LANGUAGES.join("|"),
       format: "json",
     });
     const body = entitiesSchema.parse(await getJson(fetcher, `${WIKIDATA_API}?${params}`));
@@ -136,11 +136,32 @@ export function claimsOf(entity: Entity, property: string): Claim[] {
     });
 }
 
-/** The entity's label in Portuguese, else English, else its id. */
-export const labelOf = (entity: Pick<Entity, "id" | "labels">) =>
-  entity.labels.pt?.value ?? entity.labels.en?.value ?? entity.id;
+/**
+ * The label languages read, in the order they are preferred: Brazilian
+ * Portuguese ("Polônia"), then Portuguese ("Polónia"), then the label Wikidata
+ * gives for every language (`mul`, mostly proper names), then English.
+ */
+export const LABEL_LANGUAGES = ["pt-br", "pt", "mul", "en"] as const;
+export type LabelLanguage = (typeof LABEL_LANGUAGES)[number];
 
-export const descriptionOf = (entity: Entity) => entity.descriptions.pt?.value ?? entity.descriptions.en?.value ?? null;
+/** A label and the language it was read in; `language` is null when the item has none of them and its id stands in. */
+export type Label = { text: string; language: LabelLanguage | null };
+
+/** True for a label in Portuguese; any other is a name as the source gives it, not a translation. */
+export const isPortuguese = (language: LabelLanguage | null) => language === "pt-br" || language === "pt";
+
+const firstIn = (texts: Record<string, { value: string }>) => {
+  const language = LABEL_LANGUAGES.find((code) => texts[code]);
+  return language ? { text: (texts[language] as { value: string }).value, language } : null;
+};
+
+/** The entity's label in the first language of LABEL_LANGUAGES that has one, else its id. */
+export const labelIn = (entity: Pick<Entity, "id" | "labels">): Label =>
+  firstIn(entity.labels) ?? { text: entity.id, language: null };
+
+export const labelOf = (entity: Pick<Entity, "id" | "labels">) => labelIn(entity).text;
+
+export const descriptionOf = (entity: Entity) => firstIn(entity.descriptions)?.text ?? null;
 
 export const entityUrl = (id: string) => `https://www.wikidata.org/wiki/${id}`;
 

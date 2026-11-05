@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Artist, FuzzyDate, Place } from "../schemas/domain.js";
 import type { Finding, Match } from "./research.js";
-import { buildPrompt, citationsOf, GEMINI_API, promptText, summarize } from "./summary.js";
+import { asInSource, buildPrompt, citationsOf, GEMINI_API, promptText, summarize } from "./summary.js";
 import type { Fetcher } from "./wikimedia.js";
 
 const date = (year: number | null, raw: string | null = year === null ? null : String(year)): FuzzyDate => ({
@@ -34,13 +34,19 @@ const artist: Artist = {
 
 const match: Match = { id: "Q1", label: "Lasar Segall", description: null, url: "https://www.wikidata.org/wiki/Q1", basis: "birth_year", note: null };
 
-const finding = (property: Finding["property"], value: string, reliability: Finding["reliability"] = "undetermined"): Finding => ({
+const finding = (
+  property: Finding["property"],
+  value: string,
+  reliability: Finding["reliability"] = "undetermined",
+  labelLanguage: Finding["labelLanguage"] = null,
+): Finding => ({
   source: "wikidata",
   sourceUrl: "https://www.wikidata.org/wiki/Q1",
   sourceTitle: "Wikidata: Lasar Segall (Q1)",
   property,
   propertyId: "P1",
   value,
+  labelLanguage,
   references: reliability === "documented" ? 1 : 0,
   reliability,
   reviews: [],
@@ -84,6 +90,30 @@ describe("buildPrompt", () => {
 
   it("shows instructions then data as one text", () => {
     expect(promptText({ instructions: "I", data: "D" })).toBe("# Instruções\n\nI\n\n# Dados\n\nD");
+  });
+});
+
+describe("asInSource", () => {
+  it("marks a name Wikidata has no Portuguese label for, and nothing else", () => {
+    expect(asInSource({ labelLanguage: "en" })).toBe(" (nome como na fonte, em inglês; sem rótulo em português)");
+    expect(asInSource({ labelLanguage: "mul" })).toBe(" (nome como na fonte; sem rótulo em português)");
+    expect(asInSource({ labelLanguage: "pt-br" })).toBe("");
+    expect(asInSource({ labelLanguage: "pt" })).toBe("");
+    expect(asInSource({ labelLanguage: null })).toBe("");
+  });
+
+  it("tells the model to keep such a name as the source gives it", () => {
+    const { instructions, data } = buildPrompt({
+      artist,
+      birthPlace: null,
+      deathPlace: null,
+      match,
+      findings: [finding("educatedAt", "Prussian Academy of Arts", "documented", "en"), finding("occupation", "pintor", "documented", "pt")],
+      period,
+    });
+    expect(instructions).toContain('nome marcado "nome como na fonte"');
+    expect(data).toContain("[1] formação: Prussian Academy of Arts (nome como na fonte, em inglês; sem rótulo em português) (fonte:");
+    expect(data).toContain("[2] ocupação: pintor (fonte:");
   });
 });
 
